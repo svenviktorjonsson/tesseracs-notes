@@ -1,0 +1,204 @@
+/* General Body Styles */
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrollbars */
+    cursor: default; /* Default cursor */
+    font-family: sans-serif; /* Or your preferred font */
+    /* Prevent text selection during drag operations (JS also helps) */
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  
+  /* Main Canvas */
+  #mainCanvas {
+    display: block; /* Remove potential extra space below */
+    background-color: #ffffff; /* Or your desired background */
+  }
+  
+  /* Toolbar Styles (Basic Example) */
+  #toolbar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(230, 230, 230, 0.85);
+    padding: 8px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 100;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  
+  #toolbar label {
+      font-size: 13px;
+      margin-right: 3px;
+      color: #333;
+  }
+  
+  #toolbar input[type="color"],
+  #toolbar input[type="number"] {
+      height: 22px;
+      padding: 1px 3px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font-size: 13px;
+      vertical-align: middle; /* Align better with labels */
+  }
+  #toolbar input[type="color"] {
+      width: 35px;
+      min-width: 35px; /* Override browser defaults */
+      padding: 1px; /* Fine-tune padding */
+      cursor: pointer;
+  }
+  #toolbar input#lineWidthPicker,
+  #toolbar input#fontSizeInput {
+      width: 45px;
+  }
+  
+  
+  /* Text Box Styling */
+  .textBox {
+    position: absolute; /* Set by JS */
+    white-space: pre;   /* Set by JS - preserves whitespace and line breaks */
+    outline: none;      /* No focus outline */
+    border: none;       /* No border */
+    padding: 1px;       /* Minimal padding (Consistent with JS) */
+    cursor: pointer;    /* Indicates clickable for selection/activation */
+    user-select: none;  /* Prevent text selection when not editing */
+    -webkit-user-select: none; /* Safari */
+    background-color: transparent; /* No background */
+    min-width: 5px;      /* Prevent collapsing completely if empty */
+    min-height: 1em;     /* Minimum height based on font size */
+    line-height: 1.2;    /* Adjust line height for better editing feel */
+    /* Color, Font Size, Transform are set dynamically by JS */
+  }
+  
+  /* Text Box - Active Editing State (ContentEditable) */
+  .textBox[contenteditable="true"] {
+    cursor: text;          /* Text input cursor */
+    user-select: text;     /* Allow selecting text *while* editing */
+    -webkit-user-select: text; /* Safari */
+    outline: none;         /* Ensure no focus outline */
+    border: none;          /* Ensure no border */
+    box-shadow: none;      /* Ensure no focus glow */
+    background-color: transparent; /* Still transparent */
+    /* Add any specific styles for the editing mode if needed, */
+    /* e.g., a very subtle background or inset shadow, but */
+    /* transparent is best for distraction-free */
+  }
+  
+  /* --- Hide Browser Spellcheck/Grammar Underlines --- */
+  .textBox::spelling-error,
+  .textBox::-webkit-spelling-error {
+    text-decoration: none;
+    /* text-decoration-skip-ink: none; might help in some browsers */
+  }
+  
+  .textBox::grammar-error,
+  .textBox::-webkit-grammar-error {
+    text-decoration: none;
+    /* text-decoration-skip-ink: none; */
+  }
+  /* --- End Spellcheck Hiding --- */
+  
+  
+  /* Selection Rectangle (Right-click drag) */
+  #selectionRect {
+    position: absolute;
+    border: 1px dashed #007bff;
+    background-color: rgba(0, 123, 255, 0.1);
+    display: none; /* Initially hidden */
+    z-index: 90; /* Below toolbar, above handles */
+    pointer-events: none; /* Don't interfere with mouse events */
+  }
+  
+  /* Container for Node Handles (Element Mode) */
+  #nodeHandlesContainer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* Container doesn't block clicks */
+      z-index: 50;
+  }
+  
+  /* Individual Node Handles (Element Mode) */
+  .node-handle {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border: 1px solid black;
+      background-color: white;
+      transform: translate(-50%, -50%); /* Center on node coordinates */
+      border-radius: 2px; /* Square handles */
+      pointer-events: all; /* Handles are clickable */
+      cursor: pointer;
+      display: none; /* Hidden by default */
+      opacity: 0.8;
+      box-shadow: 0 0 1px rgba(0,0,0,0.4);
+  }
+  
+  .node-handle:hover {
+      opacity: 1.0;
+  }
+  
+  /* Node Handle - Focused Component (Element Mode) */
+  .node-handle.element-focus-component {
+      border-color: dodgerblue;
+      background-color: lightblue;
+  }
+  
+  /* Node Handle - Selected Element (Element Mode) */
+  .node-handle.element-selected {
+      border-color: blue;
+      background-color: dodgerblue;
+  }
+  
+  /* Snap Indicator (Alt-drawing) */
+  #snapIndicatorElem {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border: 2px solid red;
+      background-color: rgba(255, 0, 0, 0.2);
+      border-radius: 50%; /* Circle indicator */
+      transform: translate(-50%, -50%);
+      display: none; /* Hidden by default */
+      pointer-events: none;
+      z-index: 60;
+  }
+  
+  /* Transform Handles (Rotate/Scale) */
+  #rotateHandleIcon,
+  #scaleHandleIcon {
+      position: absolute;
+      width: 16px; /* Matches JS HANDLE_ICON_SIZE */
+      height: 16px; /* Matches JS HANDLE_ICON_SIZE */
+      /* Use background images or SVG for actual icons */
+      background-color: rgba(0, 100, 255, 0.7); /* Placeholder color */
+      /* background-image: url('path/to/rotate-icon.svg'); */
+      /* background-size: cover; */
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 50%; /* Circular handles */
+      cursor: grab;
+      display: none; /* Hidden by default */
+      z-index: 95; /* Above selection rect, below toolbar */
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      transition: background-color 0.1s ease; /* Smooth feedback */
+  }
+  
+  #rotateHandleIcon:hover,
+  #scaleHandleIcon:hover {
+       background-color: rgba(0, 110, 255, 0.9); /* Brighter on hover */
+       border-color: white;
+  }
+  
+  #rotateHandleIcon:active,
+  #scaleHandleIcon:active {
+      cursor: grabbing;
+      background-color: rgba(0, 80, 200, 1.0); /* Darker when active */
+      box-shadow: inset 0 0 2px rgba(0,0,0,0.5);
+  }
