@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.isRotating = false;
             this.isScaling = false;
 
+
             this.potentialNodeHandleClick = false;
             this.potentialGraphElementClick = false;
             this.clickedElementInfo = null;
@@ -66,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.startDistanceInfo = { dist: 0, vec: { x: 0, y: 0 } };
             this.currentRotationAngle = 0;
             this.currentScaleFactor = 1;
+            this.currentDragTargetAngle = 0;
 
             this.drawingMode = 'freehand';
             this.currentDrawingStartNodeId = null;
@@ -220,14 +222,14 @@ document.addEventListener('DOMContentLoaded', () => {
                } else {
                    const currentBBox = this.getSelectionBoundingBox();
                     if (!currentBBox || currentBBox.width <= 0 || currentBBox.height <= 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-                     refBoxWidth = currentBBox.width; refBoxHeight = currentBBox.height; centerForTransform = { x: currentBBox.centerX, y: currentBBox.centerY }; rotationForTransform = 0;
-                     this.initialBBox = currentBBox; this.scaleRotateCenter = centerForTransform; this.selectionRotationAngle = rotationForTransform;
+                        refBoxWidth = currentBBox.width; refBoxHeight = currentBBox.height; centerForTransform = { x: currentBBox.centerX, y: currentBBox.centerY }; rotationForTransform = 0;
+                        this.initialBBox = currentBBox; this.scaleRotateCenter = centerForTransform; this.selectionRotationAngle = rotationForTransform;
                }
 
                if (this.isRotating || this.isScaling) {
                    if (!this.dragStartStates.length || !this.dragStartStates[0].startBBox || !this.dragStartStates[0].startCenter) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-                   const startBBox = this.dragStartStates[0].startBBox; const startCenter = this.dragStartStates[0].startCenter; const startAngle = this.dragStartStates[0].startAngle ?? 0;
-                   centerForTransform = startCenter; rotationForTransform = startAngle + (this.isRotating ? this.currentRotationAngle : 0);
+                   const startBBox = this.dragStartStates[0].startBBox; const startCenter = this.dragStartStates[0].startCenter; const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0; // Use startGroupRotation
+                   centerForTransform = startCenter; rotationForTransform = startGroupRotation + (this.isRotating ? this.currentRotationAngle : 0);
                    const scaleFactor = this.isScaling ? this.currentScaleFactor : 1; const absScaleFactor = Math.abs(scaleFactor);
                    if (startBBox.width <= 0 || startBBox.height <= 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
                    refBoxWidth = startBBox.width * absScaleFactor; refBoxHeight = startBBox.height * absScaleFactor;
@@ -236,34 +238,34 @@ document.addEventListener('DOMContentLoaded', () => {
                const halfWidth = refBoxWidth / 2; const halfHeight = refBoxHeight / 2;
                let relativeCorners = [ { x: -halfWidth, y: -halfHeight }, { x: halfWidth, y: -halfHeight }, { x: halfWidth, y: halfHeight }, { x: -halfWidth, y: halfHeight } ];
                if (this.isScaling && this.currentScaleFactor < 0) { relativeCorners = relativeCorners.map(p => ({ x: -p.x, y: -p.y })); }
-                const visualCorners = {
-                  tl: this.rotatePoint({ x: centerForTransform.x + relativeCorners[0].x, y: centerForTransform.y + relativeCorners[0].y }, centerForTransform, rotationForTransform),
-                  tr: this.rotatePoint({ x: centerForTransform.x + relativeCorners[1].x, y: centerForTransform.y + relativeCorners[1].y }, centerForTransform, rotationForTransform),
-                  br: this.rotatePoint({ x: centerForTransform.x + relativeCorners[2].x, y: centerForTransform.y + relativeCorners[2].y }, centerForTransform, rotationForTransform),
-                  bl: this.rotatePoint({ x: centerForTransform.x + relativeCorners[3].x, y: centerForTransform.y + relativeCorners[3].y }, centerForTransform, rotationForTransform)
-                };
+               const visualCorners = {
+                   tl: this.rotatePoint({ x: centerForTransform.x + relativeCorners[0].x, y: centerForTransform.y + relativeCorners[0].y }, centerForTransform, rotationForTransform),
+                   tr: this.rotatePoint({ x: centerForTransform.x + relativeCorners[1].x, y: centerForTransform.y + relativeCorners[1].y }, centerForTransform, rotationForTransform),
+                   br: this.rotatePoint({ x: centerForTransform.x + relativeCorners[2].x, y: centerForTransform.y + relativeCorners[2].y }, centerForTransform, rotationForTransform),
+                   bl: this.rotatePoint({ x: centerForTransform.x + relativeCorners[3].x, y: centerForTransform.y + relativeCorners[3].y }, centerForTransform, rotationForTransform)
+               };
 
-                const newOffset = this.HANDLE_ICON_SIZE * 1.5;
+               const newOffset = this.HANDLE_ICON_SIZE * 1.5;
 
-                const topEdgeDx = visualCorners.tr.x - visualCorners.tl.x;
-                const topEdgeDy = visualCorners.tr.y - visualCorners.tl.y;
-                const topEdgeAngle = Math.atan2(topEdgeDy, topEdgeDx);
-                const rotateOffsetAngle = topEdgeAngle - Math.PI / 4;
-                const rotateHandleCenterX = visualCorners.tr.x + Math.cos(rotateOffsetAngle) * newOffset;
-                const rotateHandleCenterY = visualCorners.tr.y + Math.sin(rotateOffsetAngle) * newOffset;
-                rotateHandle.style.left = `${rotateHandleCenterX - (this.HANDLE_ICON_SIZE / 2)}px`;
-                rotateHandle.style.top = `${rotateHandleCenterY - (this.HANDLE_ICON_SIZE / 2)}px`;
-                rotateHandle.style.display = 'block';
+               const topEdgeDx = visualCorners.tr.x - visualCorners.tl.x;
+               const topEdgeDy = visualCorners.tr.y - visualCorners.tl.y;
+               const topEdgeAngle = Math.atan2(topEdgeDy, topEdgeDx);
+               const rotateOffsetAngle = topEdgeAngle - Math.PI / 4;
+               const rotateHandleCenterX = visualCorners.tr.x + Math.cos(rotateOffsetAngle) * newOffset;
+               const rotateHandleCenterY = visualCorners.tr.y + Math.sin(rotateOffsetAngle) * newOffset;
+               rotateHandle.style.left = `${rotateHandleCenterX - (this.HANDLE_ICON_SIZE / 2)}px`;
+               rotateHandle.style.top = `${rotateHandleCenterY - (this.HANDLE_ICON_SIZE / 2)}px`;
+               rotateHandle.style.display = 'block';
 
-                const rightEdgeDx = visualCorners.br.x - visualCorners.tr.x;
-                const rightEdgeDy = visualCorners.br.y - visualCorners.tr.y;
-                const rightEdgeAngle = Math.atan2(rightEdgeDy, rightEdgeDx);
-                const scaleOffsetAngle = rightEdgeAngle - Math.PI / 4;
-                const scaleHandleCenterX = visualCorners.br.x + Math.cos(scaleOffsetAngle) * newOffset;
-                const scaleHandleCenterY = visualCorners.br.y + Math.sin(scaleOffsetAngle) * newOffset;
-                scaleHandle.style.left = `${scaleHandleCenterX - (this.HANDLE_ICON_SIZE / 2)}px`;
-                scaleHandle.style.top = `${scaleHandleCenterY - (this.HANDLE_ICON_SIZE / 2)}px`;
-                scaleHandle.style.display = 'block';
+               const rightEdgeDx = visualCorners.br.x - visualCorners.tr.x;
+               const rightEdgeDy = visualCorners.br.y - visualCorners.tr.y;
+               const rightEdgeAngle = Math.atan2(rightEdgeDy, rightEdgeDx);
+               const scaleOffsetAngle = rightEdgeAngle - Math.PI / 4;
+               const scaleHandleCenterX = visualCorners.br.x + Math.cos(scaleOffsetAngle) * newOffset;
+               const scaleHandleCenterY = visualCorners.br.y + Math.sin(scaleOffsetAngle) * newOffset;
+               scaleHandle.style.left = `${scaleHandleCenterX - (this.HANDLE_ICON_SIZE / 2)}px`;
+               scaleHandle.style.top = `${scaleHandleCenterY - (this.HANDLE_ICON_SIZE / 2)}px`;
+               scaleHandle.style.display = 'block';
         }
         updateCursorBasedOnContext() {
             const targetElement = document.elementFromPoint(this.lastMousePos.x, this.lastMousePos.y);
@@ -284,8 +286,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hoveringAnyTextBox = targetElement?.classList.contains('textBox');
 
             if (hoveringAnyTextBox) {
-                 if(targetElement === this.activeTextBox && targetElement.isContentEditable) { cursorStyle = 'text'; }
-                 else { cursorStyle = 'pointer'; }
+                if(targetElement === this.activeTextBox && targetElement.isContentEditable) { cursorStyle = 'text'; }
+                else { cursorStyle = 'pointer'; }
             } else if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId && (this.mouseOverNodeId || this.mouseOverEdgeId)) { cursorStyle = 'pointer'; }
             else if (this.selectionLevel === 'component' && (this.mouseOverNodeId || this.mouseOverEdgeId || this.mouseOverBox)) { cursorStyle = 'pointer'; }
             this.body.style.cursor = cursorStyle;
@@ -315,47 +317,53 @@ document.addEventListener('DOMContentLoaded', () => {
                  let boxToDraw = null; let angleToDraw = 0; let centerToUse = null; let dashStyle = [4, 4]; let colorStyle = 'blue';
 
                   if (this.isRotating || this.isScaling) {
-                      if (this.dragStartStates.length > 0 && this.dragStartStates[0].startBBox && this.dragStartStates[0].startCenter) {
-                          const startBBox = this.dragStartStates[0].startBBox; centerToUse = this.dragStartStates[0].startCenter; angleToDraw = (this.dragStartStates[0].startAngle ?? 0) + (this.isRotating ? this.currentRotationAngle : 0); const scaleFactor = this.isScaling ? this.currentScaleFactor : 1;
-                          boxToDraw = { centerX: centerToUse.x, centerY: centerToUse.y, width: startBBox.width * Math.abs(scaleFactor), height: startBBox.height * Math.abs(scaleFactor) };
-                          dashStyle = [4, 4]; colorStyle = 'dodgerblue';
-                      }
-                  } else if (this.isDraggingNodes || this.isDraggingItems) {
-                      if (usePersistentState) {
-                           boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height };
-                           centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle;
+                       if (this.dragStartStates.length > 0 && this.dragStartStates[0].startBBox && this.dragStartStates[0].startCenter) {
+                           const startBBox = this.dragStartStates[0].startBBox; centerToUse = this.dragStartStates[0].startCenter;
+                           // ******** FIX START ********
+                           // Use startGroupRotation (object's angle before drag) instead of startAngle (mouse angle at drag start)
+                           const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0;
+                           angleToDraw = startGroupRotation + (this.isRotating ? this.currentRotationAngle : 0);
+                           // ******** FIX END ********
+                           const scaleFactor = this.isScaling ? this.currentScaleFactor : 1;
+                           boxToDraw = { centerX: centerToUse.x, centerY: centerToUse.y, width: startBBox.width * Math.abs(scaleFactor), height: startBBox.height * Math.abs(scaleFactor) };
                            dashStyle = [4, 4]; colorStyle = 'dodgerblue';
-                      } else {
-                          const currentBBox = this.getSelectionBoundingBox();
-                          if (currentBBox && currentBBox.width > 0 && currentBBox.height > 0) {
-                              boxToDraw = { centerX: currentBBox.centerX, centerY: currentBBox.centerY, width: currentBBox.width, height: currentBBox.height };
-                              centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0;
-                              dashStyle = [4, 4]; colorStyle = 'dodgerblue';
-                          }
-                      }
+                       }
+                  } else if (this.isDraggingNodes || this.isDraggingItems) {
+                       if (usePersistentState) {
+                            boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height };
+                            centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle;
+                            dashStyle = [4, 4]; colorStyle = 'dodgerblue';
+                       } else {
+                           const currentBBox = this.getSelectionBoundingBox();
+                           if (currentBBox && currentBBox.width > 0 && currentBBox.height > 0) {
+                                boxToDraw = { centerX: currentBBox.centerX, centerY: currentBBox.centerY, width: currentBBox.width, height: currentBBox.height };
+                                centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0;
+                                dashStyle = [4, 4]; colorStyle = 'dodgerblue';
+                           }
+                       }
                   } else if (usePersistentState) {
-                      boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height };
-                      centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle; dashStyle = [4, 4]; colorStyle = 'blue';
+                       boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height };
+                       centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle; dashStyle = [4, 4]; colorStyle = 'blue';
                   } else {
-                      const currentBBox = this.getSelectionBoundingBox();
-                      if (currentBBox && currentBBox.width > 0 && currentBBox.height > 0) {
-                           boxToDraw = { centerX: currentBBox.centerX, centerY: currentBBox.centerY, width: currentBBox.width, height: currentBBox.height };
-                           centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0; dashStyle = [4, 4]; colorStyle = 'blue';
-                      }
+                       const currentBBox = this.getSelectionBoundingBox();
+                       if (currentBBox && currentBBox.width > 0 && currentBBox.height > 0) {
+                            boxToDraw = { centerX: currentBBox.centerX, centerY: currentBBox.centerY, width: currentBBox.width, height: currentBBox.height };
+                            centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0; dashStyle = [4, 4]; colorStyle = 'blue';
+                       }
                   }
 
                  if (boxToDraw && centerToUse && boxToDraw.width > 0 && boxToDraw.height > 0) {
                       const halfWidth = boxToDraw.width / 2; const halfHeight = boxToDraw.height / 2;
                       let relativeCorners = [ { x: -halfWidth, y: -halfHeight }, { x: halfWidth, y: -halfHeight }, { x: halfWidth, y: halfHeight }, { x: -halfWidth, y: halfHeight } ];
                       if (this.isScaling && this.currentScaleFactor < 0) { relativeCorners = relativeCorners.map(p => ({ x: -p.x, y: -p.y })); }
-                       const rotatedCorners = relativeCorners.map(p => this.rotatePoint({ x: centerToUse.x + p.x, y: centerToUse.y + p.y }, centerToUse, angleToDraw));
+                        const rotatedCorners = relativeCorners.map(p => this.rotatePoint({ x: centerToUse.x + p.x, y: centerToUse.y + p.y }, centerToUse, angleToDraw));
                       this.drawRotatedRect({ tl: rotatedCorners[0], tr: rotatedCorners[1], br: rotatedCorners[2], bl: rotatedCorners[3] }, colorStyle, dashStyle);
                  }
              } else if (this.selectionLevel === 'component' && !isWritingMode) {
-                  let hoverCorners = null;
-                  const targetElement = document.elementFromPoint(this.lastMousePos.x, this.lastMousePos.y);
-                  const isHoveringHandle = targetElement === this.rotateHandleIconElem || targetElement === this.scaleHandleIconElem;
-                  if (!isHoveringHandle && !this.isDrawing && !this.isSelecting && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
+                 let hoverCorners = null;
+                 const targetElement = document.elementFromPoint(this.lastMousePos.x, this.lastMousePos.y);
+                 const isHoveringHandle = targetElement === this.rotateHandleIconElem || targetElement === this.scaleHandleIconElem;
+                 if (!isHoveringHandle && !this.isDrawing && !this.isSelecting && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
                       if (this.mouseOverNodeId || this.mouseOverEdgeId) {
                          const hoveredElementId = this.mouseOverNodeId || this.mouseOverEdgeId; const hoveredElementType = this.mouseOverNodeId ? 'node' : 'edge'; const compId = this.getComponentIdForElement(hoveredElementId, hoveredElementType); if (compId) { const { componentNodes } = this.findConnectedComponent(hoveredElementId, hoveredElementType); const hoverBBox = this.getCombinedBoundingBox(componentNodes, []); if (hoverBBox && hoverBBox.width > 0 && hoverBBox.height > 0) { const hw=hoverBBox.width/2; const hh=hoverBBox.height/2; const hc= {x:hoverBBox.centerX, y:hoverBBox.centerY}; hoverCorners = { tl: { x: hc.x-hw, y: hc.y-hh }, tr: { x: hc.x+hw, y: hc.y-hh }, br: { x: hc.x+hw, y: hc.y+hh }, bl: { x: hc.x-hw, y: hc.y+hh } }; } }
                       } else if (this.mouseOverBox && this.textBoxRegistry.has(this.mouseOverBox.dataset.id)) {
@@ -364,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
                       if (hoverCorners) {
                           this.drawRotatedRect(hoverCorners, '#aaa', [3, 3]);
                       }
-                  }
+                 }
              }
 
               if (this.isAltDown && !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1 && this.lastMousePos) {
@@ -434,21 +442,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (compData) {
                     this.selectedNodes.forEach(nodeId => { if (this.nodeRegistry.has(nodeId) && compData.componentNodes.has(nodeId)) { nodesToDrag.add(nodeId); } });
                     this.selectedEdges.forEach(edgeId => {
-                         if (compData.componentEdges.has(edgeId)) {
-                             const edge = this.edgeRegistry.get(edgeId);
-                             if (edge) {
-                                 if (this.nodeRegistry.has(edge.node1Id) && compData.componentNodes.has(edge.node1Id)) { nodesToDrag.add(edge.node1Id); }
-                                 if (this.nodeRegistry.has(edge.node2Id) && compData.componentNodes.has(edge.node2Id)) { nodesToDrag.add(edge.node2Id); }
-                             }
-                         }
-                     });
+                        if (compData.componentEdges.has(edgeId)) {
+                            const edge = this.edgeRegistry.get(edgeId);
+                            if (edge) {
+                                if (this.nodeRegistry.has(edge.node1Id) && compData.componentNodes.has(edge.node1Id)) { nodesToDrag.add(edge.node1Id); }
+                                if (this.nodeRegistry.has(edge.node2Id) && compData.componentNodes.has(edge.node2Id)) { nodesToDrag.add(edge.node2Id); }
+                            }
+                        }
+                    });
                 }
                 nodesToDrag.forEach(nid => {
-                     const node = this.nodeRegistry.get(nid);
-                     if (node) {
-                         this.dragStartStates.push({ type: 'node', id: nid, startX: node.x, startY: node.y });
-                     }
-                 });
+                    const node = this.nodeRegistry.get(nid);
+                    if (node) {
+                        this.dragStartStates.push({ type: 'node', id: nid, startX: node.x, startY: node.y });
+                    }
+                });
             } else {
                 this.activeComponentData.forEach(compData => {
                     compData.componentNodes.forEach(nid => { if (this.nodeRegistry.has(nid)) { nodesToDrag.add(nid); } });
@@ -457,10 +465,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const node = this.nodeRegistry.get(nid);
                     if (node) {
                         this.dragStartStates.push({
-                             type: 'node', id: nid, startX: node.x, startY: node.y,
-                             startAngle: startingPersistentAngle,
-                             startCenter: startingPersistentCenter,
-                             startBBox: startingPersistentBBox
+                            type: 'node', id: nid, startX: node.x, startY: node.y,
+                            startGroupRotation: startingPersistentAngle, // Use startGroupRotation
+                            startCenter: startingPersistentCenter,
+                            startBBox: startingPersistentBBox
                         });
                     }
                 });
@@ -476,168 +484,282 @@ document.addEventListener('DOMContentLoaded', () => {
             this.isAltDown = event.altKey; this.isCtrlDown = event.ctrlKey || event.metaKey; this.isShiftDown = event.shiftKey;
             this.snapTargetNode = null; this.currentRotationAngle = 0; this.currentScaleFactor = 1;
             const hitNode = (target === this.canvas) ? this.getNodeAtPoint(clickPoint) : null; const hitEdge = (target === this.canvas && !hitNode) ? this.getEdgeAtPoint(clickPoint) : null; const hitElementId = hitNode?.id || hitEdge?.id; const hitElementType = hitNode ? 'node' : (hitEdge ? 'edge' : null); const isAnySelectionActive = this.selectionLevel === 'component' && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0);
-             if (this.mouseDownButton === 0 && this.potentialTransformHandleClick && isAnySelectionActive) { event.preventDefault(); event.stopPropagation(); if (this.isDrawing) this.finalizeCurrentDrawing(); if (!this.initialBBox || !this.scaleRotateCenter) { this.updateTransformHandles(); if (!this.initialBBox || !this.scaleRotateCenter || this.initialBBox.width <= 0 || this.initialBBox.height <= 0) { this.potentialTransformHandleClick = null; return; } } if(this.activeTextBox) this.deactivateTextBox(); this.dragStartStates = []; const currentAngle = this.selectionRotationAngle; const currentCenter = { ...this.scaleRotateCenter }; const currentBBox = { ...this.initialBBox }; this.activeComponentData.forEach(compData => { compData.componentNodes.forEach(nid => { const node = this.nodeRegistry.get(nid); if (node) this.dragStartStates.push({ type: 'node', id: nid, startX: node.x, startY: node.y, startAngle: currentAngle, startCenter: currentCenter, startBBox: currentBBox }); }); }); this.selectedTextBoxes.forEach(box => { const boxId = box.dataset.id; const d = this.textBoxRegistry.get(boxId); if(d) { const fontSizePx = parseFloat(d.fontSize || '16px'); this.dragStartStates.push({ type: 'text', id: boxId, element: box, startX: d.x, startY: d.y, startRotation: d.rotation ?? 0, startFontSize: fontSizePx, startAngle: currentAngle, startCenter: currentCenter, startBBox: currentBBox }); } }); if (this.potentialTransformHandleClick === 'rotate') { this.startAngle = Math.atan2(clickPoint.y - currentCenter.y, clickPoint.x - currentCenter.x) - currentAngle; } else { const vec = {x: clickPoint.x - currentCenter.x, y: clickPoint.y - currentCenter.y}; const dist = Math.sqrt(vec.x*vec.x + vec.y*vec.y); this.startDistanceInfo = { dist: dist, vec: vec }; } this.updateCursorBasedOnContext(); return; }
+             if (this.mouseDownButton === 0 && this.potentialTransformHandleClick && isAnySelectionActive) { event.preventDefault(); event.stopPropagation(); if (this.isDrawing) this.finalizeCurrentDrawing(); if (!this.initialBBox || !this.scaleRotateCenter) { this.updateTransformHandles(); if (!this.initialBBox || !this.scaleRotateCenter || this.initialBBox.width <= 0 || this.initialBBox.height <= 0) { this.potentialTransformHandleClick = null; return; } } if(this.activeTextBox) this.deactivateTextBox(); this.dragStartStates = []; const currentAngle = this.selectionRotationAngle; const currentCenter = { ...this.scaleRotateCenter }; const currentBBox = { ...this.initialBBox }; this.activeComponentData.forEach(compData => { compData.componentNodes.forEach(nid => { const node = this.nodeRegistry.get(nid); if (node) this.dragStartStates.push({ type: 'node', id: nid, startX: node.x, startY: node.y, startGroupRotation: currentAngle, startCenter: currentCenter, startBBox: currentBBox }); }); }); this.selectedTextBoxes.forEach(box => { const boxId = box.dataset.id; const d = this.textBoxRegistry.get(boxId); if(d) { const fontSizePx = parseFloat(d.fontSize || '16px'); this.dragStartStates.push({ type: 'text', id: boxId, element: box, startX: d.x, startY: d.y, startRotation: d.rotation ?? 0, startFontSize: fontSizePx, startGroupRotation: currentAngle, startCenter: currentCenter, startBBox: currentBBox }); } }); if (this.potentialTransformHandleClick === 'rotate') {
+                 const initialMouseAngleRad = Math.atan2(clickPoint.y - currentCenter.y, clickPoint.x - currentCenter.x);
+                 this.startAngle = initialMouseAngleRad;
+                 console.log(`[Rotate Start] Time: ${Date.now()}`);
+                 console.log(`  Initial Selection Angle (deg): ${(currentAngle * 180 / Math.PI).toFixed(2)}`);
+                 console.log(`  Initial Mouse Angle (deg): ${(initialMouseAngleRad * 180 / Math.PI).toFixed(2)}`);
+                 console.log(`  Stored this.startAngle (rad): ${this.startAngle.toFixed(4)}`);
+             } else { const vec = {x: clickPoint.x - currentCenter.x, y: clickPoint.y - currentCenter.y}; const dist = Math.sqrt(vec.x*vec.x + vec.y*vec.y); this.startDistanceInfo = { dist: dist, vec: vec }; } this.updateCursorBasedOnContext(); return; }
              this.potentialTransformHandleClick = null;
               if (this.mouseDownButton === 0 && !this.isShiftDown && !this.isCtrlDown && !target.classList.contains('textBox') && !hitNode && !hitEdge && target !== this.rotateHandleIconElem && target !== this.scaleHandleIconElem) { if (this.initialBBox || this.selectionRotationAngle !== 0) { this.resetPersistentTransformState(); if (isAnySelectionActive) { this.deselectAll(); } else { this.redrawCanvas(); this.updateTransformHandles(); } } else if (isAnySelectionActive) { this.deselectAll(); } }
              if (this.mouseDownButton === 2) { if (this.isDrawing) this.finalizeCurrentDrawing(); if (this.isAltDrawing) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); } event.preventDefault(); this.isSelecting = true; this.potentialRightClick = true; this.selectionStartPos = clickPoint; this.selectionRectElem.style.left = `${screenX}px`; this.selectionRectElem.style.top = `${screenY}px`; this.selectionRectElem.style.width = '0px'; this.selectionRectElem.style.height = '0px'; this.selectionRectElem.style.display = 'none'; if (!this.isCtrlDown && !this.isShiftDown) { this.deselectAll(); } this.deactivateTextBox(); this.updateCursorBasedOnContext(); return; }
              if (this.mouseDownButton === 0) { this.isSelecting = false; if (this.isAltDown) { if (this.isDrawing) this.finalizeCurrentDrawing(); this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; const historyData = { type: null, createdNode: null, createdEdges: [] }; const targetNode = hitNode || this.getNodeAtPoint(clickPoint, this.NODE_HIT_THRESHOLD); if (this.isAltDrawing && this.altDrawingSourceNodeId) { const sourceNodeId = this.altDrawingSourceNodeId; let targetId = null; if (targetNode && targetNode.id !== sourceNodeId) { targetId = targetNode.id; } else if (!targetNode) { const newNodeId = this.generateId(); const newNode = this.createNode(newNodeId, clickPoint.x, clickPoint.y); if(newNode){ targetId = newNodeId; historyData.createdNode = {...newNode}; } else { return; } } if (targetId && !this.edgeExists(sourceNodeId, targetId)) { const edgeId = this.generateId(); const edge = this.createEdge(edgeId, sourceNodeId, targetId, this.currentColor, this.currentLineWidth); if (edge) { historyData.createdEdges.push({...edge}); historyData.type = 'create_graph_elements'; }} this.altDrawingSourceNodeId = targetId; if (!targetId) { this.isAltDrawing = false; } } else { const sourcePoints = new Set(this.altPreviewSourceNodeIds); let targetId = null; if (targetNode) { targetId = targetNode.id; this.altPreviewSourceNodeIds.clear(); } else { const newNodeId = this.generateId(); const newNode = this.createNode(newNodeId, clickPoint.x, clickPoint.y); if(newNode){ targetId = newNodeId; historyData.createdNode = {...newNode}; } else { return; } } if (targetId && sourcePoints.size > 0) { historyData.type = 'create_graph_elements'; sourcePoints.forEach(sourceId => { if (sourceId !== targetId && !this.edgeExists(sourceId, targetId)) { const edgeId = this.generateId(); const edge = this.createEdge(edgeId, sourceId, targetId, this.currentColor, this.currentLineWidth); if (edge) historyData.createdEdges.push({...edge}); }}); this.altPreviewSourceNodeIds.clear(); } else if (targetId && historyData.createdNode) { historyData.type = 'create_graph_elements'; this.altPreviewSourceNodeIds.clear(); } if(targetId) { this.isAltDrawing = true; this.altDrawingSourceNodeId = targetId; } else { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; } } if (historyData.type) { this.addHistory({ type: historyData.type, nodes: historyData.createdNode ? [historyData.createdNode] : [], edges: historyData.createdEdges }); } this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); event.preventDefault(); return; }
-                  else { if (this.isAltDrawing) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; } if (target.classList.contains('textBox')) { if (this.isDrawing) this.finalizeCurrentDrawing(); event.stopPropagation(); const targetBox = target; const boxId = targetBox.dataset.id; if (!this.textBoxRegistry.has(boxId)) return; if (this.activeTextBox && this.activeTextBox !== targetBox) { this.deactivateTextBox(this.activeTextBox); } this.clickedElementInfo = { id: boxId, type: 'text' }; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = { type: 'text', id: boxId }; if (this.isCtrlDown) { this.toggleSelectTextBox(targetBox); } else if (this.isShiftDown) { this.selectTextBox(targetBox, true); } else { if (!this.selectedTextBoxes.has(targetBox) || this.selectedTextBoxes.size > 1 || this.activeComponentData.size > 0) { this.deselectAll(false); this.selectTextBox(targetBox); } } if(this.selectionLevel === 'element') { this.deselectAllGraphElements(); this.selectionLevel = 'component'; this.elementSelectionActiveForComponentId = null; } this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); }
-                       else if (target === this.canvas) { if (this.activeTextBox) this.deactivateTextBox(); if (hitElementId) { if (this.isDrawing) this.finalizeCurrentDrawing(); this.potentialGraphElementClick = true; if(!this.clickedElementInfo) this.clickedElementInfo = { id: hitElementId, type: hitElementType }; this.potentialNodeHandleClick = false; this.potentialDragTarget = { type: 'graph', representativeId: hitElementId, elementType: hitElementType }; if (this.isCtrlDown || this.isShiftDown) { this.handleGraphElementModifierClick(hitElementId, hitElementType); } else { if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const elementCompId = this.getComponentIdForElement(hitElementId, hitElementType); if (elementCompId === this.elementSelectionActiveForComponentId) { const isAlreadySelected = (hitElementType === 'node' && this.selectedNodes.has(hitElementId)) || (hitElementType === 'edge' && this.selectedEdges.has(hitElementId)); if (!isAlreadySelected || this.selectedNodes.size + this.selectedEdges.size > 1) { this.selectElement(hitElementId, hitElementType, false); } } else { this.deselectAll(false); this.selectComponent(hitElementId, hitElementType); } } else if (this.selectionLevel === 'component') { const compId = this.getComponentIdForElement(hitElementId, hitElementType); const currentCompData = this.activeComponentData; if (compId && (!currentCompData.has(compId) || currentCompData.size > 1 || this.selectedTextBoxes.size > 0)) { this.deselectAll(false); this.selectComponent(hitElementId, hitElementType); } else if (!compId && isAnySelectionActive) { this.deselectAll(); } } } this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); }
-                            else { if (this.isDrawing) this.finalizeCurrentDrawing(); this.setDrawingState(true, 'freehand'); const startNodeId = this.generateId(); const startNode = this.createNode(startNodeId, clickPoint.x, clickPoint.y); if (startNode) { this.currentDrawingStartNodeId = startNodeId; this.currentDrawingLastNodeId = startNodeId; this.currentTempNodes = [{...startNode}]; this.currentTempEdges = []; } else { this.setDrawingState(false, 'freehand'); } this.potentialDragTarget = null; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; event.preventDefault(); } }
-                       else { if (this.isDrawing) this.finalizeCurrentDrawing(); this.potentialGraphElementClick = false; this.potentialDragTarget = null; if (!target.closest('.textBox') && !target.closest('#toolbar') && !target.classList.contains('transform-handle') && !target.classList.contains('node-handle')) { if (this.activeTextBox) this.deactivateTextBox(); } } } }
+                 else { if (this.isAltDrawing) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; } if (target.classList.contains('textBox')) { if (this.isDrawing) this.finalizeCurrentDrawing(); event.stopPropagation(); const targetBox = target; const boxId = targetBox.dataset.id; if (!this.textBoxRegistry.has(boxId)) return; if (this.activeTextBox && this.activeTextBox !== targetBox) { this.deactivateTextBox(this.activeTextBox); } this.clickedElementInfo = { id: boxId, type: 'text' }; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = { type: 'text', id: boxId }; if (this.isCtrlDown) { this.toggleSelectTextBox(targetBox); } else if (this.isShiftDown) { this.selectTextBox(targetBox, true); } else { if (!this.selectedTextBoxes.has(targetBox) || this.selectedTextBoxes.size > 1 || this.activeComponentData.size > 0) { this.deselectAll(false); this.selectTextBox(targetBox); } } if(this.selectionLevel === 'element') { this.deselectAllGraphElements(); this.selectionLevel = 'component'; this.elementSelectionActiveForComponentId = null; } this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); }
+                     else if (target === this.canvas) { if (this.activeTextBox) this.deactivateTextBox(); if (hitElementId) { if (this.isDrawing) this.finalizeCurrentDrawing(); this.potentialGraphElementClick = true; if(!this.clickedElementInfo) this.clickedElementInfo = { id: hitElementId, type: hitElementType }; this.potentialNodeHandleClick = false; this.potentialDragTarget = { type: 'graph', representativeId: hitElementId, elementType: hitElementType }; if (this.isCtrlDown || this.isShiftDown) { this.handleGraphElementModifierClick(hitElementId, hitElementType); } else { if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const elementCompId = this.getComponentIdForElement(hitElementId, hitElementType); if (elementCompId === this.elementSelectionActiveForComponentId) { const isAlreadySelected = (hitElementType === 'node' && this.selectedNodes.has(hitElementId)) || (hitElementType === 'edge' && this.selectedEdges.has(hitElementId)); if (!isAlreadySelected || this.selectedNodes.size + this.selectedEdges.size > 1) { this.selectElement(hitElementId, hitElementType, false); } } else { this.deselectAll(false); this.selectComponent(hitElementId, hitElementType); } } else if (this.selectionLevel === 'component') { const compId = this.getComponentIdForElement(hitElementId, hitElementType); const currentCompData = this.activeComponentData; if (compId && (!currentCompData.has(compId) || currentCompData.size > 1 || this.selectedTextBoxes.size > 0)) { this.deselectAll(false); this.selectComponent(hitElementId, hitElementType); } else if (!compId && isAnySelectionActive) { this.deselectAll(); } } } this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); }
+                         else { if (this.isDrawing) this.finalizeCurrentDrawing(); this.setDrawingState(true, 'freehand'); const startNodeId = this.generateId(); const startNode = this.createNode(startNodeId, clickPoint.x, clickPoint.y); if (startNode) { this.currentDrawingStartNodeId = startNodeId; this.currentDrawingLastNodeId = startNodeId; this.currentTempNodes = [{...startNode}]; this.currentTempEdges = []; } else { this.setDrawingState(false, 'freehand'); } this.potentialDragTarget = null; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; event.preventDefault(); } }
+                     else { if (this.isDrawing) this.finalizeCurrentDrawing(); this.potentialGraphElementClick = false; this.potentialDragTarget = null; if (!target.closest('.textBox') && !target.closest('#toolbar') && !target.classList.contains('transform-handle') && !target.classList.contains('node-handle')) { if (this.activeTextBox) this.deactivateTextBox(); } } } }
             this.updateCursorBasedOnContext();
         }
         handleMouseMove(event) {
-             const screenX = event.clientX; const screenY = event.clientY; const currentPoint = { x: screenX, y: screenY }; this.lastMousePos = currentPoint; let needsCanvasRedraw = false; let needsHandleUpdate = false; let previewNeedsRedraw = false;
+            const screenX = event.clientX; const screenY = event.clientY; const currentPoint = { x: screenX, y: screenY }; this.lastMousePos = currentPoint; let needsCanvasRedraw = false; let needsHandleUpdate = false; let previewNeedsRedraw = false;
 
-             if (this.activeTextBox && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
-                 const rect = this.activeTextBox.getBoundingClientRect();
-                 const mouseX = currentPoint.x;
-                 const mouseY = currentPoint.y;
-                 const buffer = 2;
-                 if (mouseX < rect.left - buffer || mouseX > rect.right + buffer || mouseY < rect.top - buffer || mouseY > rect.bottom + buffer) {
-                     if (this.textBoxRegistry.has(this.activeTextBox.dataset.id)) {
-                        const elementToDeactivate = this.activeTextBox;
-                        this.deactivateTextBox(elementToDeactivate);
-                        needsCanvasRedraw = true;
-                        needsHandleUpdate = true;
-                     }
-                 }
-             }
+            // --- Mouse hover / text exit ---
+            if (this.activeTextBox && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
+                const rect = this.activeTextBox.getBoundingClientRect(); const mouseX = currentPoint.x; const mouseY = currentPoint.y; const buffer = 2;
+                if (mouseX < rect.left - buffer || mouseX > rect.right + buffer || mouseY < rect.top - buffer || mouseY > rect.bottom + buffer) { if (this.textBoxRegistry.has(this.activeTextBox.dataset.id)) { const elementToDeactivate = this.activeTextBox; this.deactivateTextBox(elementToDeactivate); needsCanvasRedraw = true; needsHandleUpdate = true; } }
+            }
+            let oldMouseOverNodeId = this.mouseOverNodeId; let oldMouseOverEdgeId = this.mouseOverEdgeId; let oldMouseOverBox = this.mouseOverBox;
+            if (!this.isDrawing && !this.isAltDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isSelecting && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
+                this.mouseOverNodeId = null; this.mouseOverEdgeId = null; this.mouseOverBox = null;
+                const targetElement = document.elementFromPoint(screenX, screenY); const isHoveringHandle = targetElement === this.rotateHandleIconElem || targetElement === this.scaleHandleIconElem;
+                if (!isHoveringHandle) {
+                    if (targetElement?.classList.contains('textBox') && targetElement !== this.activeTextBox) { this.mouseOverBox = targetElement; }
+                    else if (targetElement === this.canvas) { const node = this.getNodeAtPoint(currentPoint); const edge = node ? null : this.getEdgeAtPoint(currentPoint); if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const compId = this.elementSelectionActiveForComponentId; if (node && this.getComponentIdForElement(node.id, 'node') === compId) this.mouseOverNodeId = node.id; if (edge && this.getComponentIdForElement(edge.id, 'edge') === compId) this.mouseOverEdgeId = edge.id; } else if (this.selectionLevel === 'component'){ this.mouseOverNodeId = node ? node.id : null; this.mouseOverEdgeId = edge ? edge.id : null; } }
+                }
+                if (this.mouseOverNodeId !== oldMouseOverNodeId || this.mouseOverEdgeId !== oldMouseOverEdgeId || this.mouseOverBox !== oldMouseOverBox) { needsCanvasRedraw = true; }
+            }
+            this.updateCursorBasedOnContext();
+            let previousSnapTarget = this.snapTargetNode; this.snapTargetNode = null;
+            if (this.isAltDown && !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1 && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0)) { const potentialSnap = this.getNodeAtPoint(currentPoint, this.NODE_HIT_THRESHOLD * 1.5); if (potentialSnap && (!this.isAltDrawing || potentialSnap.id !== this.altDrawingSourceNodeId)) { this.snapTargetNode = potentialSnap; } previewNeedsRedraw = true; if (this.snapTargetNode !== previousSnapTarget) { needsHandleUpdate = true; } }
+            else { if (this.snapIndicatorElem.style.display !== 'none') { needsHandleUpdate = true; } if (!this.isAltDown && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0) && this.mouseDownButton === -1){ previewNeedsRedraw = true; } }
+            // --- End Mouse hover ---
 
-             let oldMouseOverNodeId = this.mouseOverNodeId; let oldMouseOverEdgeId = this.mouseOverEdgeId; let oldMouseOverBox = this.mouseOverBox;
-
-             if (!this.isDrawing && !this.isAltDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isSelecting && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
-                 this.mouseOverNodeId = null; this.mouseOverEdgeId = null; this.mouseOverBox = null;
-                 const targetElement = document.elementFromPoint(screenX, screenY);
-                 const isHoveringHandle = targetElement === this.rotateHandleIconElem || targetElement === this.scaleHandleIconElem;
-
-                 if (!isHoveringHandle) {
-                     if (targetElement?.classList.contains('textBox') && targetElement !== this.activeTextBox) {
-                         this.mouseOverBox = targetElement;
-                     } else if (targetElement === this.canvas) {
-                         const node = this.getNodeAtPoint(currentPoint);
-                         const edge = node ? null : this.getEdgeAtPoint(currentPoint);
-                         if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) {
-                             const compId = this.elementSelectionActiveForComponentId;
-                             if (node && this.getComponentIdForElement(node.id, 'node') === compId) this.mouseOverNodeId = node.id;
-                             if (edge && this.getComponentIdForElement(edge.id, 'edge') === compId) this.mouseOverEdgeId = edge.id;
-                         } else if (this.selectionLevel === 'component'){
-                             this.mouseOverNodeId = node ? node.id : null;
-                             this.mouseOverEdgeId = edge ? edge.id : null;
-                         }
-                     }
-                 }
-                 if (this.mouseOverNodeId !== oldMouseOverNodeId || this.mouseOverEdgeId !== oldMouseOverEdgeId || this.mouseOverBox !== oldMouseOverBox) {
-                     needsCanvasRedraw = true;
-                 }
-             }
-
-             this.updateCursorBasedOnContext();
-
-             let previousSnapTarget = this.snapTargetNode; this.snapTargetNode = null;
-             if (this.isAltDown && !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1 && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0)) { const potentialSnap = this.getNodeAtPoint(currentPoint, this.NODE_HIT_THRESHOLD * 1.5); if (potentialSnap && (!this.isAltDrawing || potentialSnap.id !== this.altDrawingSourceNodeId)) { this.snapTargetNode = potentialSnap; } previewNeedsRedraw = true; if (this.snapTargetNode !== previousSnapTarget) { needsHandleUpdate = true; } }
-             else { if (this.snapIndicatorElem.style.display !== 'none') { needsHandleUpdate = true; } if (!this.isAltDown && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0) && this.mouseDownButton === -1){ previewNeedsRedraw = true; } }
-
-             if (this.isSelecting && this.mouseDownButton === 2) {
-                 event.preventDefault(); const movedBeyondThreshold = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD; if (this.potentialRightClick && movedBeyondThreshold) { this.potentialRightClick = false; this.selectionRectElem.style.display = 'block'; document.body.style.cursor = 'default'; } if (!this.potentialRightClick) { const rectX = Math.min(this.selectionStartPos.x, screenX); const rectY = Math.min(this.selectionStartPos.y, screenY); const rectW = Math.abs(screenX - this.selectionStartPos.x); const rectH = Math.abs(screenY - this.selectionStartPos.y); this.selectionRectElem.style.left = `${rectX}px`; this.selectionRectElem.style.top = `${rectY}px`; this.selectionRectElem.style.width = `${rectW}px`; this.selectionRectElem.style.height = `${rectH}px`; } needsCanvasRedraw = false; needsHandleUpdate = false; previewNeedsRedraw = false;
-             } else if (this.mouseDownButton === 0) {
+            // --- Drag initiation ---
+             if (this.isSelecting && this.mouseDownButton === 2) { event.preventDefault(); const movedBeyondThreshold = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD; if (this.potentialRightClick && movedBeyondThreshold) { this.potentialRightClick = false; this.selectionRectElem.style.display = 'block'; document.body.style.cursor = 'default'; } if (!this.potentialRightClick) { const rectX = Math.min(this.selectionStartPos.x, screenX); const rectY = Math.min(this.selectionStartPos.y, screenY); const rectW = Math.abs(screenX - this.selectionStartPos.x); const rectH = Math.abs(screenY - this.selectionStartPos.y); this.selectionRectElem.style.left = `${rectX}px`; this.selectionRectElem.style.top = `${rectY}px`; this.selectionRectElem.style.width = `${rectW}px`; this.selectionRectElem.style.height = `${rectH}px`; } needsCanvasRedraw = false; needsHandleUpdate = false; previewNeedsRedraw = false; }
+             else if (this.mouseDownButton === 0) {
                  const movedEnough = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD;
                  let dragJustStarted = false;
-
-                 if (!this.isDrawing && !this.isAltDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && movedEnough) {
-                     if (this.potentialTransformHandleClick || this.potentialNodeHandleClick || this.potentialGraphElementClick || this.potentialDragTarget?.type === 'text') {
-                        if (this.activeTextBox) { this.deactivateTextBox(); }
-                     }
-
-                     if (this.potentialTransformHandleClick) { if (this.potentialTransformHandleClick === 'rotate') { this.isRotating = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } else if (this.potentialTransformHandleClick === 'scale') { this.isScaling = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } this.potentialTransformHandleClick = null; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = null; }
-                     else if (this.potentialNodeHandleClick || this.potentialGraphElementClick) { let canDrag = false; if (this.clickedElementInfo) { if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const compId = this.getComponentIdForElement(this.clickedElementInfo.id, this.clickedElementInfo.type); if (compId === this.elementSelectionActiveForComponentId) { const isClickedSelected = (this.clickedElementInfo.type === 'node' && this.selectedNodes.has(this.clickedElementInfo.id)) || (this.clickedElementInfo.type === 'edge' && this.selectedEdges.has(this.clickedElementInfo.id)); if (isClickedSelected) { canDrag = true; } } } else if (this.selectionLevel === 'component') { const compId = this.getComponentIdForElement(this.clickedElementInfo.id, this.clickedElementInfo.type); if (compId && this.activeComponentData.has(compId)) { canDrag = true; } } } if (canDrag) { this.prepareNodeDrag(); if (this.dragStartStates.length > 0) { this.isDraggingNodes = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } } this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialDragTarget = null; }
-                     else if (this.potentialDragTarget?.type === 'text') { const box = this.textBoxRegistry.get(this.potentialDragTarget.id)?.element; if(box && this.selectedTextBoxes.has(box)){ this.isDraggingItems = true; dragJustStarted = true; this.body.style.cursor = 'move'; this.body.style.userSelect = 'none'; this.body.style.webkitUserSelect = 'none';
-                          const startingPersistentCenter = this.scaleRotateCenter && this.initialBBox ? { ...this.scaleRotateCenter } : null;
-                          const startingPersistentBBox = this.initialBBox ? { ...this.initialBBox } : null;
-                          const startingPersistentAngle = this.selectionRotationAngle;
-                          this.dragStartStates = [];
-                          this.selectedTextBoxes.forEach(b => {
-                              const boxId = b.dataset.id; const d = this.textBoxRegistry.get(boxId);
-                              if(d) {
-                                  const fontSizePx = parseFloat(d.fontSize || '16px');
-                                  this.dragStartStates.push({ type: 'text', id: boxId, element: b, startX: d.x, startY: d.y, startRotation: d.rotation ?? 0, startFontSize: fontSizePx, startAngle: startingPersistentAngle, startCenter: startingPersistentCenter, startBBox: startingPersistentBBox });
-                              }
-                          });
-                           } this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = null; }
-                     else { this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialDragTarget = null; this.potentialTransformHandleClick = false; }
-                     if(dragJustStarted){ needsCanvasRedraw = true; needsHandleUpdate = true; }
-                 }
+                 if (!this.isDrawing && !this.isAltDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && movedEnough) { if (this.potentialTransformHandleClick || this.potentialNodeHandleClick || this.potentialGraphElementClick || this.potentialDragTarget?.type === 'text') { if (this.activeTextBox) { this.deactivateTextBox(); } } if (this.potentialTransformHandleClick) { if (this.potentialTransformHandleClick === 'rotate') { this.isRotating = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } else if (this.potentialTransformHandleClick === 'scale') { this.isScaling = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } this.potentialTransformHandleClick = null; this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = null; } else if (this.potentialNodeHandleClick || this.potentialGraphElementClick) { let canDrag = false; if (this.clickedElementInfo) { if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const compId = this.getComponentIdForElement(this.clickedElementInfo.id, this.clickedElementInfo.type); if (compId === this.elementSelectionActiveForComponentId) { const isClickedSelected = (this.clickedElementInfo.type === 'node' && this.selectedNodes.has(this.clickedElementInfo.id)) || (this.clickedElementInfo.type === 'edge' && this.selectedEdges.has(this.clickedElementInfo.id)); if (isClickedSelected) { canDrag = true; } } } else if (this.selectionLevel === 'component') { const compId = this.getComponentIdForElement(this.clickedElementInfo.id, this.clickedElementInfo.type); if (compId && this.activeComponentData.has(compId)) { canDrag = true; } } } if (canDrag) { this.prepareNodeDrag(); if (this.dragStartStates.length > 0) { this.isDraggingNodes = true; dragJustStarted = true; this.body.style.cursor = 'grabbing'; } } this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialDragTarget = null; } else if (this.potentialDragTarget?.type === 'text') { const box = this.textBoxRegistry.get(this.potentialDragTarget.id)?.element; if(box && this.selectedTextBoxes.has(box)){ this.isDraggingItems = true; dragJustStarted = true; this.body.style.cursor = 'move'; this.body.style.userSelect = 'none'; this.body.style.webkitUserSelect = 'none'; const startingPersistentCenter = this.scaleRotateCenter && this.initialBBox ? { ...this.scaleRotateCenter } : null; const startingPersistentBBox = this.initialBBox ? { ...this.initialBBox } : null; const startingPersistentAngle = this.selectionRotationAngle; this.dragStartStates = []; this.selectedTextBoxes.forEach(b => { const boxId = b.dataset.id; const d = this.textBoxRegistry.get(boxId); if(d) { const fontSizePx = parseFloat(d.fontSize || '16px'); this.dragStartStates.push({ type: 'text', id: boxId, element: b, startX: d.x, startY: d.y, startRotation: d.rotation ?? 0, startFontSize: fontSizePx, startGroupRotation: startingPersistentAngle, startCenter: startingPersistentCenter, startBBox: startingPersistentBBox }); } }); } this.potentialGraphElementClick = false; this.potentialNodeHandleClick = false; this.potentialDragTarget = null; } else { this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialDragTarget = null; this.potentialTransformHandleClick = false; } if(dragJustStarted){ needsCanvasRedraw = true; needsHandleUpdate = true; } }
+            // --- End Drag initiation ---
 
                  const dx = screenX - this.dragStartMousePos.x;
                  const dy = screenY - this.dragStartMousePos.y;
 
-                 if (this.isRotating) { event.preventDefault(); if (!this.scaleRotateCenter) return; const currentAngle = Math.atan2(currentPoint.y - this.scaleRotateCenter.y, currentPoint.x - this.scaleRotateCenter.x); const deltaAngle = currentAngle - this.startAngle; this.currentRotationAngle = deltaAngle; this.dragStartStates.forEach(itemState => { const startRelX = itemState.startX - this.scaleRotateCenter.x; const startRelY = itemState.startY - this.scaleRotateCenter.y; const cosA = Math.cos(deltaAngle); const sinA = Math.sin(deltaAngle); const finalRelX = startRelX * cosA - startRelY * sinA; const finalRelY = startRelX * sinA + startRelY * cosA; const newX = this.scaleRotateCenter.x + finalRelX; const newY = this.scaleRotateCenter.y + finalRelY; const newAbsRotation = (itemState.startRotation ?? 0) + deltaAngle; if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = newX; node.y = newY; } } else if (itemState.type === 'text') { const textData = this.textBoxRegistry.get(itemState.id); if (textData?.element) { textData.element.style.left = `${newX}px`; textData.element.style.top = `${newY}px`; textData.element.style.transform = `rotate(${newAbsRotation}rad)`; } } }); needsCanvasRedraw = true; needsHandleUpdate = true; }
-                 else if (this.isScaling) { event.preventDefault(); if (!this.scaleRotateCenter || !this.startDistanceInfo) return; const currentVec = {x: currentPoint.x - this.scaleRotateCenter.x, y: currentPoint.y - this.scaleRotateCenter.y}; const currentDist = Math.sqrt(currentVec.x*currentVec.x + currentVec.y*currentVec.y); let scaleFactor = this.startDistanceInfo.dist > 1e-6 ? currentDist / this.startDistanceInfo.dist : 1; const dotProduct = this.startDistanceInfo.vec.x * currentVec.x + this.startDistanceInfo.vec.y * currentVec.y; if (dotProduct < 0 && this.startDistanceInfo.dist > 1e-6) { scaleFactor = -scaleFactor; } const absScale = Math.abs(scaleFactor); if(absScale < this.MIN_SCALE) { scaleFactor = this.MIN_SCALE * Math.sign(scaleFactor || 1); } this.currentScaleFactor = scaleFactor; this.dragStartStates.forEach(itemState => { const startRelX = itemState.startX - this.scaleRotateCenter.x; const startRelY = itemState.startY - this.scaleRotateCenter.y; const scaledRelX = startRelX * this.currentScaleFactor; const scaledRelY = startRelY * this.currentScaleFactor; const newX = this.scaleRotateCenter.x + scaledRelX; const newY = this.scaleRotateCenter.y + scaledRelY; if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = newX; node.y = newY; } } else if (itemState.type === 'text') { const textData = this.textBoxRegistry.get(itemState.id); if (textData?.element) { textData.element.style.left = `${newX}px`; textData.element.style.top = `${newY}px`; const startFontSize = itemState.startFontSize || 16; let newFontSize = Math.round(startFontSize * Math.abs(this.currentScaleFactor)); newFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, newFontSize)); textData.element.style.fontSize = `${newFontSize}px`; textData.element.style.transform = `rotate(${itemState.startRotation ?? 0}rad)`; } } }); needsCanvasRedraw = true; needsHandleUpdate = true; }
-                 else if (this.isDraggingNodes) { event.preventDefault(); this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = itemState.startX + dx; node.y = itemState.startY + dy; } } }); needsCanvasRedraw = true; needsHandleUpdate = true; }
-                 else if (this.isDraggingItems) { event.preventDefault(); this.dragStartStates.forEach(itemState => { if (itemState.type === 'text') { itemState.element.style.left = `${itemState.startX + dx}px`; itemState.element.style.top = `${itemState.startY + dy}px`; itemState.element.style.transform = `rotate(${itemState.startRotation ?? 0}rad)`; } }); needsCanvasRedraw = true; needsHandleUpdate = true; }
-                 else if (this.isDrawing && this.drawingMode === 'freehand') { event.preventDefault(); const lastNode = this.nodeRegistry.get(this.currentDrawingLastNodeId); if (lastNode && this.sqrDist(currentPoint, lastNode) > (this.DRAG_THRESHOLD * this.DRAG_THRESHOLD * 0.5)) { const newNodeId = this.generateId(); const newNode = this.createNode(newNodeId, currentPoint.x, currentPoint.y); const edgeId = this.generateId(); const edge = this.createEdge(edgeId, this.currentDrawingLastNodeId, newNodeId, this.currentColor, this.currentLineWidth); if (newNode && edge) { this.currentTempNodes.push({ ...newNode }); this.currentTempEdges.push({ ...edge }); this.currentDrawingLastNodeId = newNodeId; needsCanvasRedraw = true; } else if(newNode && !edge) { console.warn("Edge creation failed during freehand draw."); this.currentDrawingLastNodeId = newNodeId; needsCanvasRedraw = true;} } }
+                 // --- Rotation Logic ---
+                 if (this.isRotating) {
+                     event.preventDefault();
+                     if (!this.dragStartStates.length || !this.dragStartStates[0].startCenter) return;
 
-                 if (this.isDraggingNodes || this.isDraggingItems) {
-                      const startState = this.dragStartStates[0];
-                      if (startState?.startCenter && startState?.startBBox && this.scaleRotateCenter && this.initialBBox) {
-                          const initialDragCenter = startState.startCenter;
-                          this.scaleRotateCenter.x = initialDragCenter.x + dx;
-                          this.scaleRotateCenter.y = initialDragCenter.y + dy;
-                          this.initialBBox.centerX = this.scaleRotateCenter.x;
-                          this.initialBBox.centerY = this.scaleRotateCenter.y;
-                          this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2;
-                          this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2;
-                          this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2;
-                          this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2;
-                      }
+                     const rotationCenter = this.dragStartStates[0].startCenter;
+                     const currentMouseAngle = Math.atan2(currentPoint.y - rotationCenter.y, currentPoint.x - rotationCenter.x);
+                     let deltaAngle = currentMouseAngle - this.startAngle;
+
+                     if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+                     else if (deltaAngle <= -Math.PI) deltaAngle += 2 * Math.PI;
+
+                     this.currentRotationAngle = deltaAngle; // Store delta for history/mouseup
+
+                     const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0;
+                     this.currentDragTargetAngle = startGroupRotation + deltaAngle; // Store target for visuals
+
+                     this.dragStartStates.forEach(itemState => {
+                         const startX = itemState.startX;
+                         const startY = itemState.startY;
+                         const startRelX = startX - rotationCenter.x;
+                         const startRelY = startY - rotationCenter.y;
+
+                         const cosDelta = Math.cos(deltaAngle);
+                         const sinDelta = Math.sin(deltaAngle);
+                         const rotatedRelX = startRelX * cosDelta - startRelY * sinDelta;
+                         const rotatedRelY = startRelX * sinDelta + startRelY * cosDelta;
+
+                         const newX = rotationCenter.x + rotatedRelX;
+                         const newY = rotationCenter.y + rotatedRelY;
+
+                         if (itemState.type === 'node') {
+                             const node = this.nodeRegistry.get(itemState.id);
+                             if (node) {
+                                 node.x = newX; // Update registry data
+                                 node.y = newY;
+                             }
+                         } else if (itemState.type === 'text') {
+                             const textData = this.textBoxRegistry.get(itemState.id);
+                             if (textData?.element) {
+                                 textData.x = newX;
+                                 textData.y = newY;
+                                 const textStartRotation = itemState.startRotation ?? 0;
+                                 const newAbsRotation = textStartRotation + deltaAngle;
+                                 textData.element.style.left = `${newX}px`;
+                                 textData.element.style.top = `${newY}px`;
+                                 textData.element.style.transform = `rotate(${newAbsRotation}rad)`;
+                             }
+                         }
+                     });
+                     needsCanvasRedraw = true; needsHandleUpdate = true;
                  }
-             }
-             if (previewNeedsRedraw || needsCanvasRedraw) { this.redrawCanvas(); }
-             if (needsHandleUpdate) { this.updateNodeHandles(); this.updateTransformHandles(); }
+                 // --- End Rotation Logic ---
+
+                 // --- Scaling Logic ---
+                 else if (this.isScaling) {
+                     event.preventDefault();
+                     if (!this.dragStartStates.length || !this.dragStartStates[0].startCenter || !this.startDistanceInfo) return;
+                     const rotationCenter = this.dragStartStates[0].startCenter;
+                     const currentVec = {x: currentPoint.x - rotationCenter.x, y: currentPoint.y - rotationCenter.y};
+                     const currentDist = Math.sqrt(currentVec.x*currentVec.x + currentVec.y*currentVec.y);
+                     let scaleFactor = this.startDistanceInfo.dist > 1e-6 ? currentDist / this.startDistanceInfo.dist : 1;
+                     const dotProduct = this.startDistanceInfo.vec.x * currentVec.x + this.startDistanceInfo.vec.y * currentVec.y;
+                     if (dotProduct < 0 && this.startDistanceInfo.dist > 1e-6) { scaleFactor = -scaleFactor; }
+                     const absScale = Math.abs(scaleFactor);
+                     if(absScale < this.MIN_SCALE) { scaleFactor = this.MIN_SCALE * Math.sign(scaleFactor || 1); }
+                     this.currentScaleFactor = scaleFactor;
+
+                     this.dragStartStates.forEach(itemState => {
+                         const startX = itemState.startX; const startY = itemState.startY;
+                         const startRelX = startX - rotationCenter.x; const startRelY = startY - rotationCenter.y;
+                         const scaledRelX = startRelX * this.currentScaleFactor; const scaledRelY = startRelY * this.currentScaleFactor;
+                         const newX = rotationCenter.x + scaledRelX; const newY = rotationCenter.y + scaledRelY;
+
+                         if (itemState.type === 'node') {
+                             const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = newX; node.y = newY; }
+                         } else if (itemState.type === 'text') {
+                             const textData = this.textBoxRegistry.get(itemState.id); if (textData?.element) {
+                                 textData.x = newX;
+                                 textData.y = newY;
+                                 textData.element.style.left = `${newX}px`;
+                                 textData.element.style.top = `${newY}px`;
+                                 const startFontSize = itemState.startFontSize || 16;
+                                 let newFontSize = Math.round(startFontSize * Math.abs(this.currentScaleFactor));
+                                 newFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, newFontSize));
+                                 textData.element.style.fontSize = `${newFontSize}px`;
+                                 const startRotation = itemState.startRotation ?? 0;
+                                 textData.element.style.transform = `rotate(${startRotation}rad)`;
+                             }
+                         }
+                     });
+                     needsCanvasRedraw = true; needsHandleUpdate = true;
+                 }
+                 // --- End Scaling Logic ---
+
+                 // --- Dragging Nodes / Items Logic ---
+                 else if (this.isDraggingNodes) {
+                      event.preventDefault();
+                      this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = itemState.startX + dx; node.y = itemState.startY + dy; } } });
+                      needsCanvasRedraw = true; needsHandleUpdate = true;
+                 }
+                 else if (this.isDraggingItems) {
+                      event.preventDefault();
+                      this.dragStartStates.forEach(itemState => {
+                           if (itemState.type === 'text') {
+                               const newX = itemState.startX + dx;
+                               const newY = itemState.startY + dy;
+                               const textData = this.textBoxRegistry.get(itemState.id);
+                               if (textData) { textData.x = newX; textData.y = newY;}
+                               itemState.element.style.left = `${newX}px`;
+                               itemState.element.style.top = `${newY}px`;
+                               const startRotation = itemState.startRotation ?? 0;
+                               itemState.element.style.transform = `rotate(${startRotation}rad)`;
+                           }
+                      });
+                      needsCanvasRedraw = true; needsHandleUpdate = true;
+                 }
+                 // --- End Dragging ---
+
+                 // --- Freehand Drawing Logic ---
+                 else if (this.isDrawing && this.drawingMode === 'freehand') { event.preventDefault(); const lastNode = this.nodeRegistry.get(this.currentDrawingLastNodeId); if (lastNode && this.sqrDist(currentPoint, lastNode) > (this.DRAG_THRESHOLD * this.DRAG_THRESHOLD * 0.5)) { const newNodeId = this.generateId(); const newNode = this.createNode(newNodeId, currentPoint.x, currentPoint.y); const edgeId = this.generateId(); const edge = this.createEdge(edgeId, this.currentDrawingLastNodeId, newNodeId, this.currentColor, this.currentLineWidth); if (newNode && edge) { this.currentTempNodes.push({ ...newNode }); this.currentTempEdges.push({ ...edge }); this.currentDrawingLastNodeId = newNodeId; needsCanvasRedraw = true; } else if(newNode && !edge) { console.warn("Edge creation failed during freehand draw."); this.currentDrawingLastNodeId = newNodeId; needsCanvasRedraw = true; } } }
+                 // --- End Freehand ---
+
+                 // --- Dragged BBox Update ---
+                 if (this.isDraggingNodes || this.isDraggingItems) { const startState = this.dragStartStates[0]; if (startState?.startCenter && startState?.startBBox && this.scaleRotateCenter && this.initialBBox) { const initialDragCenter = startState.startCenter; this.scaleRotateCenter.x = initialDragCenter.x + dx; this.scaleRotateCenter.y = initialDragCenter.y + dy; this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y; this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2; this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2; } }
+                 // --- End BBox Update ---
+            }
+            if (previewNeedsRedraw || needsCanvasRedraw) { this.redrawCanvas(); }
+            if (needsHandleUpdate) { this.updateNodeHandles(); this.updateTransformHandles(); }
         }
         handleMouseUp(event) {
-            const releasedButton = event.button; const screenX = event.clientX; const screenY = event.clientY; const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD; const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand'; const wasDraggingNodes = this.isDraggingNodes; const wasDraggingItems = this.isDraggingItems; const wasRotating = this.isRotating; const wasScaling = this.isScaling; const wasSelecting = this.isSelecting; const clickTargetInfo = this.clickedElementInfo; const finalDeltaAngle = this.currentRotationAngle; const finalScaleFactor = this.currentScaleFactor;
-            let startPersistentStateForHistory = null; if ((wasRotating || wasScaling) && this.dragStartStates.length > 0 && this.dragStartStates[0].startCenter && this.dragStartStates[0].startBBox) { startPersistentStateForHistory = { angle: this.dragStartStates[0].startAngle ?? 0, center: { ...this.dragStartStates[0].startCenter }, box: { ...this.dragStartStates[0].startBBox } }; } else { startPersistentStateForHistory = { angle: this.selectionRotationAngle, center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : { x: 0, y: 0 }, box: this.initialBBox ? { ...this.initialBBox } : null }; }
+            const releasedButton = event.button; const screenX = event.clientX; const screenY = event.clientY; const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD; const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand'; const wasDraggingNodes = this.isDraggingNodes; const wasDraggingItems = this.isDraggingItems; const wasRotating = this.isRotating; const wasScaling = this.isScaling; const wasSelecting = this.isSelecting; const clickTargetInfo = this.clickedElementInfo;
+            const finalDeltaAngle = this.currentRotationAngle;
+            const finalScaleFactor = this.currentScaleFactor;
+            let startPersistentStateForHistory = null; if ((wasRotating || wasScaling) && this.dragStartStates.length > 0 && this.dragStartStates[0].startCenter && this.dragStartStates[0].startBBox) { startPersistentStateForHistory = { angle: this.dragStartStates[0].startGroupRotation ?? 0, center: { ...this.dragStartStates[0].startCenter }, box: { ...this.dragStartStates[0].startBBox } }; } else { startPersistentStateForHistory = { angle: this.selectionRotationAngle, center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : { x: 0, y: 0 }, box: this.initialBBox ? { ...this.initialBBox } : null }; }
             this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialTransformHandleClick = null;
             if (releasedButton === 2 && wasSelecting) { event.preventDefault(); const wasSelectingRect = !this.potentialRightClick; let rectBounds = null; if (wasSelectingRect && this.selectionRectElem.style.display !== 'none') { rectBounds = this.selectionRectElem.getBoundingClientRect(); } this.selectionRectElem.style.display = 'none'; this.isSelecting = false; this.potentialRightClick = false; if (wasSelectingRect && rectBounds && rectBounds.width > 0 && rectBounds.height > 0) { let newlySelectedTextBoxesInRect = new Set(); let newlySelectedComponentsInRect = new Map(); this.textBoxRegistry.forEach(boxData => { const el = boxData.element; if (!el || !el.offsetParent) return; const b = el.getBoundingClientRect(); const intersects = b.left < rectBounds.right && b.right > rectBounds.left && b.top < rectBounds.bottom && b.bottom > rectBounds.top; if (intersects) { newlySelectedTextBoxesInRect.add(el); } }); this.selectionLevel = 'component'; this.elementSelectionActiveForComponentId = null; this.selectedNodes.clear(); this.selectedEdges.clear(); const processedNodesRect = new Set(); this.nodeRegistry.forEach(node => { const nodeInBounds = node.x >= rectBounds.left && node.x <= rectBounds.right && node.y >= rectBounds.top && node.y <= rectBounds.bottom; if (nodeInBounds && !processedNodesRect.has(node.id)) { const { componentNodes, componentEdges, representativeId } = this.findConnectedComponent(node.id, 'node'); if (representativeId && (componentNodes.size > 0 || componentEdges.size > 0)) { if (!newlySelectedComponentsInRect.has(representativeId)) { newlySelectedComponentsInRect.set(representativeId, { componentNodes, componentEdges }); } componentNodes.forEach(nid => processedNodesRect.add(nid)); } } }); const previouslySelectedTextBoxes = new Set(this.selectedTextBoxes); const previouslyActiveComponentData = new Map(this.activeComponentData); let finalSelectedTextBoxes = new Set(previouslySelectedTextBoxes); let finalActiveComponentData = new Map(previouslyActiveComponentData); if (this.isCtrlDown) { newlySelectedTextBoxesInRect.forEach(box => { if (previouslySelectedTextBoxes.has(box)) finalSelectedTextBoxes.delete(box); else finalSelectedTextBoxes.add(box); }); newlySelectedComponentsInRect.forEach((compData, compId) => { if (previouslyActiveComponentData.has(compId)) finalActiveComponentData.delete(compId); else finalActiveComponentData.set(compId, compData); }); } else if (this.isShiftDown) { newlySelectedTextBoxesInRect.forEach(box => finalSelectedTextBoxes.add(box)); newlySelectedComponentsInRect.forEach((compData, compId) => finalActiveComponentData.set(compId, compData)); } else { finalSelectedTextBoxes = newlySelectedTextBoxesInRect; finalActiveComponentData = newlySelectedComponentsInRect; } this.selectedTextBoxes = finalSelectedTextBoxes; this.activeComponentData = finalActiveComponentData; this.resetPersistentTransformState(); this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); } }
-            else if (releasedButton === 0) { if (wasDrawingFreehand) { this.finalizeCurrentDrawing(); } else if ((wasRotating || wasScaling) && startPersistentStateForHistory?.center && startPersistentStateForHistory?.box) { const transformType = wasRotating ? 'rotate' : 'scale'; const transformHistory = { type: 'transform_items', transformType: transformType, center: { ...startPersistentStateForHistory.center }, items: [], startAngle: startPersistentStateForHistory.angle, startCenter: startPersistentStateForHistory.center, startBBox: startPersistentStateForHistory.box }; let transformApplied = false; this.dragStartStates.forEach(itemState => { let endX, endY, endRotation = itemState.startRotation ?? 0, startFontSize = itemState.startFontSize, endFontSize = itemState.startFontSize; let moved = false; const startRot = itemState.startRotation ?? 0; const startRelX = itemState.startX - startPersistentStateForHistory.center.x; const startRelY = itemState.startY - startPersistentStateForHistory.center.y; if (wasRotating) { const cosA = Math.cos(finalDeltaAngle); const sinA = Math.sin(finalDeltaAngle); endX = startPersistentStateForHistory.center.x + (startRelX * cosA - startRelY * sinA); endY = startPersistentStateForHistory.center.y + (startRelX * sinA + startRelY * cosA); endRotation = startRot + finalDeltaAngle; } else { endX = startPersistentStateForHistory.center.x + startRelX * finalScaleFactor; endY = startPersistentStateForHistory.center.y + startRelY * finalScaleFactor; endRotation = startRot; startFontSize = itemState.startFontSize || 16; endFontSize = Math.round(startFontSize * Math.abs(finalScaleFactor)); endFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, endFontSize)); } if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { node.x = endX; node.y = endY; moved = Math.abs(endX - itemState.startX) > 0.1 || Math.abs(endY - itemState.startY) > 0.1; } } else if (itemState.type === 'text') { const textData = this.textBoxRegistry.get(itemState.id); if (textData?.element) { textData.x = endX; textData.y = endY; textData.rotation = endRotation; textData.fontSize = `${endFontSize}px`; textData.element.style.left = `${endX}px`; textData.element.style.top = `${endY}px`; textData.element.style.fontSize = textData.fontSize; textData.element.style.transform = `rotate(${endRotation}rad)`; moved = Math.abs(endX - itemState.startX) > 0.1 || Math.abs(endY - itemState.startY) > 0.1 || Math.abs(endRotation - startRot) > 0.01 || Math.abs(endFontSize - startFontSize) > 0.1; } } if (moved) { transformHistory.items.push({ id: itemState.id, type: itemState.type, startX: itemState.startX, startY: itemState.startY, endX: endX, endY: endY, startRotation: startRot, endRotation: endRotation, startFontSize: startFontSize, endFontSize: endFontSize }); transformApplied = true; } }); if (transformApplied) { this.addHistory(transformHistory); } const startBBox = startPersistentStateForHistory.box; const startCenter = startPersistentStateForHistory.center; const startAngle = startPersistentStateForHistory.angle; const newPersistentAngle = startAngle + (wasRotating ? finalDeltaAngle : 0); const finalAbsScaleFactor = wasScaling ? Math.abs(finalScaleFactor) : 1; const newPersistentWidth = startBBox.width * finalAbsScaleFactor; const newPersistentHeight = startBBox.height * finalAbsScaleFactor; this.selectionRotationAngle = newPersistentAngle; this.scaleRotateCenter = startCenter; this.initialBBox = { centerX: startCenter.x, centerY: startCenter.y, width: newPersistentWidth, height: newPersistentHeight, minX: startCenter.x - newPersistentWidth / 2, maxX: startCenter.x + newPersistentWidth / 2, minY: startCenter.y - newPersistentHeight / 2, maxY: startCenter.y + newPersistentHeight / 2 }; this.isRotating = false; this.isScaling = false; }
-                 else if (wasDraggingNodes) { const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y; const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { const finalX = node.x; const finalY = node.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY }); } } } }); if (moves.length > 0) { this.addHistory({ type: 'move_nodes', moves: moves }); }
-                    const startState = this.dragStartStates[0];
-                    if (startState?.startCenter && this.scaleRotateCenter && this.initialBBox) {
-                         this.scaleRotateCenter.x = startState.startCenter.x + dx;
-                         this.scaleRotateCenter.y = startState.startCenter.y + dy;
-                         this.initialBBox.centerX = this.scaleRotateCenter.x;
-                         this.initialBBox.centerY = this.scaleRotateCenter.y;
-                         this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2;
-                         this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2;
-                         this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2;
-                         this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2;
-                    } else {
-                        if (!startState?.startCenter) {
-                            this.resetPersistentTransformState();
-                        }
+            else if (releasedButton === 0) { if (wasDrawingFreehand) { this.finalizeCurrentDrawing(); } else if ((wasRotating || wasScaling) && startPersistentStateForHistory?.center && startPersistentStateForHistory?.box) { const transformType = wasRotating ? 'rotate' : 'scale'; const transformHistory = { type: 'transform_items', transformType: transformType, center: { ...startPersistentStateForHistory.center }, items: [], startAngle: startPersistentStateForHistory.angle, startCenter: startPersistentStateForHistory.center, startBBox: startPersistentStateForHistory.box }; let transformApplied = false;
+                const rotationCenter = startPersistentStateForHistory.center;
+
+                this.dragStartStates.forEach(itemState => {
+                    let endX, endY, startRotation, endRotation, startFontSize, endFontSize;
+                    const startX = itemState.startX; const startY = itemState.startY;
+                    const startRelX = startX - rotationCenter.x; const startRelY = startY - rotationCenter.y;
+                    startFontSize = itemState.startFontSize; endFontSize = itemState.startFontSize;
+                    startRotation = itemState.type === 'text' ? (itemState.startRotation ?? 0) : (itemState.startGroupRotation ?? 0);
+
+                    if (wasRotating) {
+                        const cosDelta = Math.cos(finalDeltaAngle); const sinDelta = Math.sin(finalDeltaAngle);
+                        const rotatedRelX = startRelX * cosDelta - startRelY * sinDelta; const rotatedRelY = startRelX * sinDelta + startRelY * cosDelta;
+                        endX = rotationCenter.x + rotatedRelX; endY = rotationCenter.y + rotatedRelY;
+                        endRotation = startRotation + finalDeltaAngle;
+                    } else { // wasScaling
+                        const scaledRelX = startRelX * finalScaleFactor; const scaledRelY = startRelY * finalScaleFactor;
+                        endX = rotationCenter.x + scaledRelX; endY = rotationCenter.y + scaledRelY;
+                        endRotation = startRotation;
+                        endFontSize = Math.round(startFontSize * Math.abs(finalScaleFactor));
+                        endFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, endFontSize));
                     }
-                    this.isDraggingNodes = false; }
-                 else if (wasDraggingItems) { this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto'; const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y; const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'text') { const finalX = itemState.startX + dx; const finalY = itemState.startY + dy; const boxData = this.textBoxRegistry.get(itemState.id); if (boxData) { boxData.x = finalX; boxData.y = finalY; itemState.element.style.left = `${finalX}px`; itemState.element.style.top = `${finalY}px`; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startRotation: itemState.startRotation, endRotation: itemState.startRotation, startFontSize: itemState.startFontSize, endFontSize: itemState.startFontSize }); } } } }); if (moves.length > 0) { this.addHistory({ type: 'move_text', moves: moves }); }
-                      const startState = this.dragStartStates[0];
-                      if (startState?.startCenter && this.scaleRotateCenter && this.initialBBox) {
-                           this.scaleRotateCenter.x = startState.startCenter.x + dx;
-                           this.scaleRotateCenter.y = startState.startCenter.y + dy;
-                           this.initialBBox.centerX = this.scaleRotateCenter.x;
-                           this.initialBBox.centerY = this.scaleRotateCenter.y;
-                           this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2;
-                           this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2;
-                           this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2;
-                           this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2;
-                      } else {
-                          if (!startState?.startCenter) {
-                               this.resetPersistentTransformState();
-                           }
-                      }
-                      this.isDraggingItems = false; }
-                 else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
-                 } }
+
+                    let moved = false;
+                    if(itemState.type === 'node') {
+                        moved = Math.abs(endX - startX) > 0.1 || Math.abs(endY - startY) > 0.1;
+                    } else if (itemState.type === 'text') {
+                        moved = Math.abs(endX - startX) > 0.1 || Math.abs(endY - startY) > 0.1 || Math.abs(endRotation - startRotation) > 0.01 || Math.abs(endFontSize - startFontSize) > 0.1;
+                    }
+
+                    if (moved) { transformHistory.items.push({ id: itemState.id, type: itemState.type, startX: startX, startY: startY, endX: endX, endY: endY, startRotation: startRotation, endRotation: endRotation, startFontSize: startFontSize, endFontSize: endFontSize }); transformApplied = true; }
+                });
+
+                if (transformApplied) {
+                    this.applyTransform(transformHistory.items, false);
+                    this.addHistory(transformHistory);
+                }
+
+                const startGroupRotation_mu = startPersistentStateForHistory.angle;
+                const finalDeltaAngle_mu = finalDeltaAngle;
+                const newPersistentAngle = startGroupRotation_mu + (wasRotating ? finalDeltaAngle_mu : 0);
+                const finalAbsScaleFactor = wasScaling ? Math.abs(finalScaleFactor) : 1;
+                const newPersistentWidth = startPersistentStateForHistory.box.width * finalAbsScaleFactor;
+                const newPersistentHeight = startPersistentStateForHistory.box.height * finalAbsScaleFactor;
+
+                this.selectionRotationAngle = newPersistentAngle;
+                this.scaleRotateCenter = startPersistentStateForHistory.center;
+                this.initialBBox = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: newPersistentWidth, height: newPersistentHeight, minX: this.scaleRotateCenter.x - newPersistentWidth / 2, maxX: this.scaleRotateCenter.x + newPersistentWidth / 2, minY: this.scaleRotateCenter.y - newPersistentHeight / 2, maxY: this.scaleRotateCenter.y + newPersistentHeight / 2 };
+
+                if (wasRotating) {
+                    console.log(`[Rotate End] Time: ${Date.now()}`);
+                    console.log(`  Start Group Angle (deg): ${(startGroupRotation_mu * 180 / Math.PI).toFixed(2)}`);
+                    console.log(`  Final Delta Angle (deg): ${(finalDeltaAngle_mu * 180 / Math.PI).toFixed(2)}`);
+                    console.log(`  New Persistent Angle (deg): ${(newPersistentAngle * 180 / Math.PI).toFixed(2)}`);
+                    console.log(`  Set this.selectionRotationAngle (rad): ${this.selectionRotationAngle.toFixed(4)}`);
+                }
+
+                this.isRotating = false; this.isScaling = false; }
+            else if (wasDraggingNodes) { const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y; const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { const finalX = node.x; const finalY = node.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY }); } } } }); if (moves.length > 0) { this.addHistory({ type: 'move_nodes', moves: moves }); }
+                const startState = this.dragStartStates[0];
+                if (startState?.startCenter && this.scaleRotateCenter && this.initialBBox) {
+                    this.scaleRotateCenter.x = startState.startCenter.x + dx; this.scaleRotateCenter.y = startState.startCenter.y + dy;
+                    this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y;
+                    this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2;
+                    this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2;
+                } else { if (!startState?.startCenter) { this.resetPersistentTransformState(); } }
+                this.isDraggingNodes = false; }
+            else if (wasDraggingItems) { this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto'; const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y; const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'text') { const finalX = itemState.startX + dx; const finalY = itemState.startY + dy; const boxData = this.textBoxRegistry.get(itemState.id); if (boxData) { boxData.x = finalX; boxData.y = finalY; itemState.element.style.left = `${finalX}px`; itemState.element.style.top = `${finalY}px`; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startRotation: itemState.startRotation, endRotation: itemState.startRotation, startFontSize: itemState.startFontSize, endFontSize: itemState.startFontSize }); } } } }); if (moves.length > 0) { this.addHistory({ type: 'move_text', moves: moves }); }
+                const startState = this.dragStartStates[0];
+                if (startState?.startCenter && this.scaleRotateCenter && this.initialBBox) {
+                    this.scaleRotateCenter.x = startState.startCenter.x + dx; this.scaleRotateCenter.y = startState.startCenter.y + dy;
+                    this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y;
+                    this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2;
+                    this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2;
+                } else { if (!startState?.startCenter) { this.resetPersistentTransformState(); } }
+                this.isDraggingItems = false; }
+            else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
+                 // Handle simple click if necessary (e.g., activate text box on single click without drag)
+                 if (clickTargetInfo && clickTargetInfo.type === 'text') {
+                    const targetBox = this.textBoxRegistry.get(clickTargetInfo.id)?.element;
+                    if (targetBox && this.selectedTextBoxes.has(targetBox) && this.selectedTextBoxes.size === 1 && this.activeComponentData.size === 0) {
+                         // If it was a single click on an already solely selected text box, maybe activate it?
+                         // Or maybe double-click is the only way to activate. Current logic requires dblclick.
+                    }
+                 }
+            } }
             this.mouseDownButton = -1; this.isDraggingNodes = false; this.isDraggingItems = false; this.isRotating = false; this.isScaling = false; this.isSelecting = false; this.dragStartStates = []; this.snapTargetNode = null; this.potentialDragTarget = null; this.clickedElementInfo = null; this.potentialRightClick = false; this.currentRotationAngle = 0; this.currentScaleFactor = 1; if (this.isAltDrawing && !this.isAltDown) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; }
             this.updateCursorBasedOnContext(); this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles();
         }
@@ -662,6 +784,9 @@ document.addEventListener('DOMContentLoaded', () => {
                          this.selectedTextBoxes.delete(selectedBox);
                      }
                  });
+                 if (!this.selectedTextBoxes.has(box)) { // Ensure it's selected if clicking to edit
+                    this.selectedTextBoxes.add(box);
+                 }
 
                  this.resetPersistentTransformState();
                  this.setActiveTextBox(box);
@@ -696,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (event.key === 'Escape') {
                  event.preventDefault();
-                 if (this.isRotating || this.isScaling) { this.applyTransform(this.dragStartStates, true); const startState = this.dragStartStates[0]; if (startState) { this.selectionRotationAngle = startState.startAngle ?? 0; this.initialBBox = startState.startBBox ? { ...startState.startBBox } : null; this.scaleRotateCenter = startState.startCenter ? { ...startState.startCenter } : {x:0,y:0}; } else { this.resetPersistentTransformState(); } this.isRotating = false; this.isScaling = false; this.dragStartStates = []; this.currentRotationAngle = 0; this.currentScaleFactor = 1; this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext(); }
+                 if (this.isRotating || this.isScaling) { this.applyTransform(this.dragStartStates, true); const startState = this.dragStartStates[0]; if (startState) { this.selectionRotationAngle = startState.startGroupRotation ?? 0; this.initialBBox = startState.startBBox ? { ...startState.startBBox } : null; this.scaleRotateCenter = startState.startCenter ? { ...startState.startCenter } : {x:0,y:0}; } else { this.resetPersistentTransformState(); } this.isRotating = false; this.isScaling = false; this.dragStartStates = []; this.currentRotationAngle = 0; this.currentScaleFactor = 1; this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext(); }
                  else if (this.isDrawing || this.isAltDrawing) { this.finalizeCurrentDrawing(); }
                  else if (this.isSelecting) { this.isSelecting = false; this.potentialRightClick = false; this.selectionRectElem.style.display = 'none'; }
                  else if (focusIsOnEditableTextBox) { this.deactivateTextBox(currentActiveTextBox); this.body.focus({ preventScroll: true }); }
@@ -733,67 +858,68 @@ document.addEventListener('DOMContentLoaded', () => {
         handleFontSizeChange(event) { let newFontSizeVal = parseInt(event.target.value, 10); if (isNaN(newFontSizeVal)) return; newFontSizeVal = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, newFontSizeVal)); this.fontSizeInput.value = newFontSizeVal; const newFontSize = `${newFontSizeVal}px`; this.currentFontSize = newFontSize; const changes = []; this.selectedTextBoxes.forEach(box => { const id = box.dataset.id; if (!this.textBoxRegistry.has(id)) return; const d = this.textBoxRegistry.get(id); const oldFontSize = d.fontSize || '16px'; if (oldFontSize !== newFontSize) { d.fontSize = newFontSize; d.element.style.fontSize = newFontSize; changes.push({ id, oldFontSize, newFontSize }); } }); if (changes.length > 0) { this.addHistory({ type: 'change_fontsize', changes }); this.resetPersistentTransformState(); this.redrawCanvas(); this.updateTransformHandles(); } }
 
         setActiveTextBox(textBoxElement) {
-             if (!textBoxElement || !this.textBoxRegistry.has(textBoxElement.dataset.id)) return;
-             if (this.activeTextBox && this.activeTextBox !== textBoxElement) {
-                 this.deactivateTextBox(this.activeTextBox);
-             }
-             this.activeTextBox = textBoxElement;
-             this.activeTextBox.contentEditable = true;
-             this.activeTextBox.classList.add('writing-mode');
+              if (!textBoxElement || !this.textBoxRegistry.has(textBoxElement.dataset.id)) return;
+              if (this.activeTextBox && this.activeTextBox !== textBoxElement) {
+                  this.deactivateTextBox(this.activeTextBox);
+              }
+              this.activeTextBox = textBoxElement;
+              this.activeTextBox.contentEditable = true;
+              this.activeTextBox.classList.add('writing-mode');
 
-             this.activeTextBox.focus({ preventScroll: true });
-             this.moveCaretToEnd(this.activeTextBox);
+              this.activeTextBox.focus({ preventScroll: true });
+              this.moveCaretToEnd(this.activeTextBox);
 
-             this.rotateHandleIconElem.style.display = 'none';
-             this.scaleHandleIconElem.style.display = 'none';
-             this.redrawCanvas();
+              this.rotateHandleIconElem.style.display = 'none';
+              this.scaleHandleIconElem.style.display = 'none';
+              this.redrawCanvas();
 
-             this.updateCursorBasedOnContext();
-         }
-         deactivateTextBox(textBoxElement = this.activeTextBox) {
-             if (!textBoxElement || !this.textBoxRegistry.has(textBoxElement.dataset.id)) return;
+              this.updateCursorBasedOnContext();
+           }
+           deactivateTextBox(textBoxElement = this.activeTextBox) {
+              if (!textBoxElement || !this.textBoxRegistry.has(textBoxElement.dataset.id)) return;
 
-             if (this.activeTextBox === textBoxElement) {
-                 const data = this.textBoxRegistry.get(textBoxElement.dataset.id);
-                 if (data) {
-                     const newText = textBoxElement.textContent;
-                     if (data.text !== newText) {
-                         data.text = newText;
-                         this.resetPersistentTransformState();
-                     }
-                 }
+              if (this.activeTextBox === textBoxElement) {
+                  const data = this.textBoxRegistry.get(textBoxElement.dataset.id);
+                  if (data) {
+                      const newText = textBoxElement.textContent;
+                      if (data.text !== newText) {
+                          // TODO: Add history entry for text change
+                          data.text = newText;
+                          this.resetPersistentTransformState(); // Reset bbox if text changes
+                      }
+                  }
 
-                 textBoxElement.contentEditable = false;
-                 textBoxElement.classList.remove('writing-mode');
-                 this.activeTextBox = null;
+                  textBoxElement.contentEditable = false;
+                  textBoxElement.classList.remove('writing-mode');
+                  this.activeTextBox = null;
 
-                 this.redrawCanvas();
-                 this.updateTransformHandles();
-                 this.updateCursorBasedOnContext();
-             }
-         }
+                  this.redrawCanvas();
+                  this.updateTransformHandles();
+                  this.updateCursorBasedOnContext();
+              }
+           }
 
-         applyTransform(itemStates, applyStart = false) {
-             itemStates.forEach(itemState => {
-                 const targetX = applyStart ? itemState.startX : itemState.endX;
-                 const targetY = applyStart ? itemState.startY : itemState.endY;
-                 const targetRotation = applyStart ? itemState.startRotation : itemState.endRotation;
-                 const targetFontSize = applyStart ? itemState.startFontSize : itemState.endFontSize;
+           applyTransform(itemStates, applyStart = false) {
+              itemStates.forEach(itemState => {
+                  const targetX = applyStart ? itemState.startX : itemState.endX;
+                  const targetY = applyStart ? itemState.startY : itemState.endY;
+                  const targetRotation = applyStart ? itemState.startRotation : itemState.endRotation;
+                  const targetFontSize = applyStart ? itemState.startFontSize : itemState.endFontSize;
 
-                 if (itemState.type === 'node') {
-                     const node = this.nodeRegistry.get(itemState.id);
-                     if (node) { node.x = targetX; node.y = targetY; }
-                 } else if (itemState.type === 'text') {
-                     const textData = this.textBoxRegistry.get(itemState.id);
-                     if (textData?.element) {
-                         textData.x = targetX; textData.y = targetY; textData.rotation = targetRotation; textData.fontSize = `${targetFontSize}px`;
-                         textData.element.style.left = `${targetX}px`; textData.element.style.top = `${targetY}px`;
-                         textData.element.style.fontSize = textData.fontSize;
-                         textData.element.style.transform = `rotate(${targetRotation}rad)`;
-                     }
-                 }
-             });
-         }
+                  if (itemState.type === 'node') {
+                      const node = this.nodeRegistry.get(itemState.id);
+                      if (node) { node.x = targetX; node.y = targetY; }
+                  } else if (itemState.type === 'text') {
+                      const textData = this.textBoxRegistry.get(itemState.id);
+                      if (textData?.element) {
+                          textData.x = targetX; textData.y = targetY; textData.rotation = targetRotation; textData.fontSize = `${targetFontSize}px`;
+                          textData.element.style.left = `${targetX}px`; textData.element.style.top = `${targetY}px`;
+                          textData.element.style.fontSize = textData.fontSize;
+                          textData.element.style.transform = `rotate(${targetRotation}rad)`;
+                      }
+                  }
+              });
+           }
 
         addHistory(action) { if (this.undoStack.length >= this.MAX_HISTORY) { this.undoStack.shift(); } this.undoStack.push(action); this.redoStack = []; }
         undo() {
@@ -802,40 +928,40 @@ document.addEventListener('DOMContentLoaded', () => {
             const oldPersistent = { angle: this.selectionRotationAngle, box: this.initialBBox ? {...this.initialBBox} : null, center: this.scaleRotateCenter ? {...this.scaleRotateCenter} : null };
             try {
                  switch (action.type) {
-                      case 'create_text': const currentText = this.textBoxRegistry.get(action.boxInfo.id)?.element?.textContent; redo = { type: 'create_text', boxInfo: { ...action.boxInfo, text: currentText ?? action.boxInfo.text } }; if(this.deleteTextBox(action.boxInfo.id)) {} break;
-                      case 'create_graph_elements': const redoNodes_c = []; const redoEdges_c = []; action.edges?.slice().reverse().forEach(ei => { if(this.edgeRegistry.has(ei.id)) { const { edge:de } = this.deleteEdgeSmart(ei.id); if(de) redoEdges_c.unshift(de); } }); action.nodes?.slice().reverse().forEach(ni => { if (this.nodeRegistry.has(ni.id)) { const { node:dn, edges: de_c } = this.deleteNodeSmart(ni.id); if(dn) redoNodes_c.unshift(dn); de_c.forEach(e=>redoEdges_c.unshift(e)); } }); redo = { type: 'create_graph_elements', nodes: redoNodes_c.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i), edges: redoEdges_c.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i) }; this.deselectAll(); break;
+                     case 'create_text': const currentText = this.textBoxRegistry.get(action.boxInfo.id)?.element?.textContent; redo = { type: 'create_text', boxInfo: { ...action.boxInfo, text: currentText ?? action.boxInfo.text } }; if(this.deleteTextBox(action.boxInfo.id)) {} break;
+                     case 'create_graph_elements': const redoNodes_c = []; const redoEdges_c = []; action.edges?.slice().reverse().forEach(ei => { if(this.edgeRegistry.has(ei.id)) { const { edge:de } = this.deleteEdgeSmart(ei.id); if(de) redoEdges_c.unshift(de); } }); action.nodes?.slice().reverse().forEach(ni => { if (this.nodeRegistry.has(ni.id)) { const { node:dn, edges: de_c } = this.deleteNodeSmart(ni.id); if(dn) redoNodes_c.unshift(dn); de_c.forEach(e=>redoEdges_c.unshift(e)); } }); redo = { type: 'create_graph_elements', nodes: redoNodes_c.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i), edges: redoEdges_c.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i) }; this.deselectAll(); break;
                      case 'delete_selected': action.deletedInfo.nodes.forEach(n => { this.createNode(n.id, n.x, n.y); }); action.deletedInfo.edges.forEach(e => { this.createEdge(e.id, e.node1Id, e.node2Id, e.color, e.lineWidth); }); action.deletedInfo.texts.forEach(t => { this.createTextBoxElement(t.id, t.text, t.x, t.y, t.color, t.fontSize, t.rotation ?? 0); }); action.deletedInfo.createdEdges?.forEach(ce => { if (this.edgeRegistry.has(ce.id)) this.deleteEdgeSmart(ce.id); }); redo = { type: 'delete_selected', deletedInfo: { texts: action.deletedInfo.texts.map(t => ({...t})), nodes: action.deletedInfo.nodes.map(n => ({...n})), edges: action.deletedInfo.edges.map(e => ({...e})), createdEdges: action.deletedInfo.createdEdges?.map(ce => ({...ce})) || [] }}; this.deselectAll(); break;
                      case 'move_nodes': const rNodeMoves = []; action.moves.forEach(m => { const n = this.nodeRegistry.get(m.id); if (n) { n.x = m.startX; n.y = m.startY; rNodeMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY }); } }); redo = { type: 'move_nodes', moves: rNodeMoves }; this.resetPersistentTransformState(); break;
                      case 'move_text': const rTextMoves = []; action.moves.forEach(m => { const d = this.textBoxRegistry.get(m.id); if (d) { d.x = m.startX; d.y = m.startY; d.rotation = m.startRotation ?? 0; d.element.style.left = `${m.startX}px`; d.element.style.top = `${m.startY}px`; d.element.style.transform = `rotate(${d.rotation}rad)`; rTextMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY, startRotation: m.endRotation, endRotation: m.startRotation }); } }); redo = { type: 'move_text', moves: rTextMoves }; this.resetPersistentTransformState(); break;
                       case 'transform_items': this.applyTransform(action.items, true); this.selectionRotationAngle = action.startAngle ?? 0; this.scaleRotateCenter = action.startCenter ? { ...action.startCenter } : { x: 0, y: 0 }; this.initialBBox = action.startBBox ? { ...action.startBBox } : null; redo = { ...action, prevPersistent: oldPersistent }; break;
                       case 'change_color': const rColChanges = { texts: [], edges: [] }; action.changes.texts.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.color = c.oldColor; d.element.style.color = c.oldColor; rColChanges.texts.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); action.changes.edges.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.color = c.oldColor; rColChanges.edges.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); redo = { type: 'change_color', changes: rColChanges }; break;
                       case 'change_linewidth': const rLwChanges = []; action.changes.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.lineWidth = c.oldLineWidth; rLwChanges.push({ id: c.id, oldLineWidth: c.newLineWidth, newLineWidth: c.oldLineWidth }); } }); redo = { type: 'change_linewidth', changes: rLwChanges }; break;
-                     case 'change_fontsize': const rFsChanges = []; action.changes.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.fontSize = c.oldFontSize; d.element.style.fontSize = c.oldFontSize; rFsChanges.push({ id: c.id, oldFontSize: c.newFontSize, newFontSize: c.oldFontSize }); } }); redo = { type: 'change_fontsize', changes: rFsChanges }; this.resetPersistentTransformState(); break;
+                      case 'change_fontsize': const rFsChanges = []; action.changes.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.fontSize = c.oldFontSize; d.element.style.fontSize = c.oldFontSize; rFsChanges.push({ id: c.id, oldFontSize: c.newFontSize, newFontSize: c.oldFontSize }); } }); redo = { type: 'change_fontsize', changes: rFsChanges }; this.resetPersistentTransformState(); break;
                  }
                  if (redo) this.redoStack.push(redo);
             } catch (e) { console.error("Undo err:", e, action); this.redoStack = []; }
-              this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext();
-          }
-          redo() {
-               if (this.redoStack.length === 0) return;
-               const action = this.redoStack.pop(); let undo = null;
-               const oldPersistent = { angle: this.selectionRotationAngle, box: this.initialBBox ? {...this.initialBBox} : null, center: this.scaleRotateCenter ? {...this.scaleRotateCenter} : null };
-               try {
-                    switch (action.type) {
-                         case 'create_text': const { id: tid_r, text: tt_r, x: tx_r, y: ty_r, color: tc_r, fontSize: tf_r, rotation: tr_r } = action.boxInfo; this.createTextBoxElement(tid_r, tt_r, tx_r, ty_r, tc_r, tf_r, tr_r ?? 0); undo = { type: 'create_text', boxInfo: { ...action.boxInfo } }; this.deselectAll(); this.selectTextBox(this.textBoxRegistry.get(tid_r).element); break;
-                         case 'create_graph_elements': const undoNodes_c = []; const undoEdges_c = []; action.nodes?.forEach(n => { const cn = this.createNode(n.id, n.x, n.y); if(cn) undoNodes_c.push({...cn}); }); action.edges?.forEach(e => { const ce = this.createEdge(e.id, e.node1Id, e.node2Id, e.color, e.lineWidth); if(ce) undoEdges_c.push({...ce}); }); undo = { type: 'create_graph_elements', nodes: undoNodes_c, edges: undoEdges_c }; const firstNodeId_r = action.nodes?.[0]?.id || action.edges?.[0]?.node1Id; this.deselectAll(); if (firstNodeId_r) this.selectComponent(firstNodeId_r, 'node'); break;
-                        case 'delete_selected': const deleted_ds_r = { texts: [], nodes: [], edges: [], createdEdges: [] }; action.deletedInfo.texts.slice().reverse().forEach(t => { const currentText = this.textBoxRegistry.get(t.id)?.element?.textContent; if(this.deleteTextBox(t.id)) { deleted_ds_r.texts.push({ ...t, text: currentText ?? t.text }); } }); action.deletedInfo.edges.slice().reverse().forEach(e => { if(this.edgeRegistry.has(e.id)) { const { edge:de } = this.deleteEdgeSmart(e.id); if(de) deleted_ds_r.edges.push(de); } }); action.deletedInfo.nodes.slice().reverse().forEach(n => { if(this.nodeRegistry.has(n.id)) { const { node:dn, edges:de, createdEdge:ce } = this.deleteNodeSmart(n.id); if(dn) deleted_ds_r.nodes.push(dn); de.forEach(e2 => deleted_ds_r.edges.push(e2)); if(ce) deleted_ds_r.createdEdges.push(ce); } }); deleted_ds_r.nodes = deleted_ds_r.nodes.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); deleted_ds_r.edges = deleted_ds_r.edges.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); deleted_ds_r.createdEdges = deleted_ds_r.createdEdges.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); if (deleted_ds_r.texts.length > 0 || deleted_ds_r.nodes.length > 0 || deleted_ds_r.edges.length > 0 || deleted_ds_r.createdEdges.length > 0) { undo = { type: 'delete_selected', deletedInfo: deleted_ds_r }; } this.deselectAll(); break;
-                        case 'move_nodes': const uNodeMoves = []; action.moves.forEach(m => { const n = this.nodeRegistry.get(m.id); if (n) { n.x = m.endX; n.y = m.endY; uNodeMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY }); } }); undo = { type: 'move_nodes', moves: uNodeMoves }; this.resetPersistentTransformState(); break;
-                        case 'move_text': const uTextMoves = []; action.moves.forEach(m => { const d = this.textBoxRegistry.get(m.id); if (d) { d.x = m.endX; d.y = m.endY; d.rotation = m.endRotation ?? 0; d.element.style.left = `${m.endX}px`; d.element.style.top = `${m.endY}px`; d.element.style.transform = `rotate(${d.rotation}rad)`; uTextMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY, startRotation: m.endRotation, endRotation: m.startRotation }); } }); undo = { type: 'move_text', moves: uTextMoves }; this.resetPersistentTransformState(); break;
-                       case 'transform_items': this.applyTransform(action.items, false); if (action.prevPersistent) { this.selectionRotationAngle = action.prevPersistent.angle; this.initialBBox = action.prevPersistent.box; this.scaleRotateCenter = action.prevPersistent.center; } else { this.resetPersistentTransformState(); } undo = { ...action, prevPersistent: oldPersistent }; break;
-                       case 'change_color': const uColChanges = { texts: [], edges: [] }; action.changes.texts.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.color = c.newColor; d.element.style.color = c.newColor; uColChanges.texts.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); action.changes.edges.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.color = c.newColor; uColChanges.edges.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); undo = { type: 'change_color', changes: uColChanges }; break;
-                       case 'change_linewidth': const uLwChanges = []; action.changes.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.lineWidth = c.newLineWidth; uLwChanges.push({ id: c.id, oldLineWidth: c.newLineWidth, newLineWidth: c.oldLineWidth }); } }); undo = { type: 'change_linewidth', changes: uLwChanges }; break;
-                        case 'change_fontsize': const uFsChanges = []; action.changes.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.fontSize = c.newFontSize; d.element.style.fontSize = c.newFontSize; uFsChanges.push({ id: c.id, oldFontSize: c.newFontSize, newFontSize: c.oldFontSize }); } }); undo = { type: 'change_fontsize', changes: uFsChanges }; this.resetPersistentTransformState(); break;
-                    }
-                    if (undo) this.undoStack.push(undo);
-               } catch (e) { console.error("Redo err:", e, action); this.undoStack = []; }
                this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext();
            }
+           redo() {
+                if (this.redoStack.length === 0) return;
+                const action = this.redoStack.pop(); let undo = null;
+                const oldPersistent = { angle: this.selectionRotationAngle, box: this.initialBBox ? {...this.initialBBox} : null, center: this.scaleRotateCenter ? {...this.scaleRotateCenter} : null };
+                try {
+                     switch (action.type) {
+                          case 'create_text': const { id: tid_r, text: tt_r, x: tx_r, y: ty_r, color: tc_r, fontSize: tf_r, rotation: tr_r } = action.boxInfo; this.createTextBoxElement(tid_r, tt_r, tx_r, ty_r, tc_r, tf_r, tr_r ?? 0); undo = { type: 'create_text', boxInfo: { ...action.boxInfo } }; this.deselectAll(); this.selectTextBox(this.textBoxRegistry.get(tid_r).element); break;
+                          case 'create_graph_elements': const undoNodes_c = []; const undoEdges_c = []; action.nodes?.forEach(n => { const cn = this.createNode(n.id, n.x, n.y); if(cn) undoNodes_c.push({...cn}); }); action.edges?.forEach(e => { const ce = this.createEdge(e.id, e.node1Id, e.node2Id, e.color, e.lineWidth); if(ce) undoEdges_c.push({...ce}); }); undo = { type: 'create_graph_elements', nodes: undoNodes_c, edges: undoEdges_c }; const firstNodeId_r = action.nodes?.[0]?.id || action.edges?.[0]?.node1Id; this.deselectAll(); if (firstNodeId_r) this.selectComponent(firstNodeId_r, 'node'); break;
+                         case 'delete_selected': const deleted_ds_r = { texts: [], nodes: [], edges: [], createdEdges: [] }; action.deletedInfo.texts.slice().reverse().forEach(t => { const currentText = this.textBoxRegistry.get(t.id)?.element?.textContent; if(this.deleteTextBox(t.id)) { deleted_ds_r.texts.push({ ...t, text: currentText ?? t.text }); } }); action.deletedInfo.edges.slice().reverse().forEach(e => { if(this.edgeRegistry.has(e.id)) { const { edge:de } = this.deleteEdgeSmart(e.id); if(de) deleted_ds_r.edges.push(de); } }); action.deletedInfo.nodes.slice().reverse().forEach(n => { if(this.nodeRegistry.has(n.id)) { const { node:dn, edges:de, createdEdge:ce } = this.deleteNodeSmart(n.id); if(dn) deleted_ds_r.nodes.push(dn); de.forEach(e2 => deleted_ds_r.edges.push(e2)); if(ce) deleted_ds_r.createdEdges.push(ce); } }); deleted_ds_r.nodes = deleted_ds_r.nodes.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); deleted_ds_r.edges = deleted_ds_r.edges.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); deleted_ds_r.createdEdges = deleted_ds_r.createdEdges.filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i); if (deleted_ds_r.texts.length > 0 || deleted_ds_r.nodes.length > 0 || deleted_ds_r.edges.length > 0 || deleted_ds_r.createdEdges.length > 0) { undo = { type: 'delete_selected', deletedInfo: deleted_ds_r }; } this.deselectAll(); break;
+                         case 'move_nodes': const uNodeMoves = []; action.moves.forEach(m => { const n = this.nodeRegistry.get(m.id); if (n) { n.x = m.endX; n.y = m.endY; uNodeMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY }); } }); undo = { type: 'move_nodes', moves: uNodeMoves }; this.resetPersistentTransformState(); break;
+                         case 'move_text': const uTextMoves = []; action.moves.forEach(m => { const d = this.textBoxRegistry.get(m.id); if (d) { d.x = m.endX; d.y = m.endY; d.rotation = m.endRotation ?? 0; d.element.style.left = `${m.endX}px`; d.element.style.top = `${m.endY}px`; d.element.style.transform = `rotate(${d.rotation}rad)`; uTextMoves.push({ ...m, startX: m.endX, startY: m.endY, endX: m.startX, endY: m.startY, startRotation: m.endRotation, endRotation: m.startRotation }); } }); undo = { type: 'move_text', moves: uTextMoves }; this.resetPersistentTransformState(); break;
+                         case 'transform_items': this.applyTransform(action.items, false); if (action.prevPersistent) { this.selectionRotationAngle = action.prevPersistent.angle; this.initialBBox = action.prevPersistent.box; this.scaleRotateCenter = action.prevPersistent.center; } else { this.resetPersistentTransformState(); } undo = { ...action, prevPersistent: oldPersistent }; break;
+                         case 'change_color': const uColChanges = { texts: [], edges: [] }; action.changes.texts.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.color = c.newColor; d.element.style.color = c.newColor; uColChanges.texts.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); action.changes.edges.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.color = c.newColor; uColChanges.edges.push({ id: c.id, oldColor: c.newColor, newColor: c.oldColor }); } }); undo = { type: 'change_color', changes: uColChanges }; break;
+                         case 'change_linewidth': const uLwChanges = []; action.changes.forEach(c => { const d = this.edgeRegistry.get(c.id); if(d){ d.lineWidth = c.newLineWidth; uLwChanges.push({ id: c.id, oldLineWidth: c.newLineWidth, newLineWidth: c.oldLineWidth }); } }); undo = { type: 'change_linewidth', changes: uLwChanges }; break;
+                          case 'change_fontsize': const uFsChanges = []; action.changes.forEach(c => { const d = this.textBoxRegistry.get(c.id); if(d){ d.fontSize = c.newFontSize; d.element.style.fontSize = c.newFontSize; uFsChanges.push({ id: c.id, oldFontSize: c.newFontSize, newFontSize: c.oldFontSize }); } }); undo = { type: 'change_fontsize', changes: uFsChanges }; this.resetPersistentTransformState(); break;
+                     }
+                     if (undo) this.undoStack.push(undo);
+                } catch (e) { console.error("Redo err:", e, action); this.undoStack = []; }
+               this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext();
+              }
 
         init() {
             this.lineWidthPicker.value = this.currentLineWidth; this.fontSizeInput.value = parseInt(this.currentFontSize, 10); this.colorPicker.value = this.currentColor;
@@ -848,14 +974,35 @@ document.addEventListener('DOMContentLoaded', () => {
             document.addEventListener('keydown', this.handleKeyDown.bind(this));
             document.addEventListener('keyup', this.handleKeyUp.bind(this));
             document.addEventListener('dblclick', this.handleDoubleClick.bind(this));
-            this.colorPicker.addEventListener('input', this.handleColorChange.bind(this)); this.colorPicker.addEventListener('change', this.handleColorChange.bind(this));
-            this.lineWidthPicker.addEventListener('input', this.handleLineWidthChange.bind(this)); this.lineWidthPicker.addEventListener('change', this.handleLineWidthChange.bind(this));
-            this.fontSizeInput.addEventListener('change', this.handleFontSizeChange.bind(this)); this.fontSizeInput.addEventListener('input', this.handleFontSizeChange.bind(this));
 
-            const focusBody = () => this.body.focus({ preventScroll: true });
-            this.colorPicker.addEventListener('blur', focusBody);
-            this.lineWidthPicker.addEventListener('blur', focusBody);
-            this.fontSizeInput.addEventListener('blur', focusBody);
+            // --- Event listeners for input value changes ---
+            this.colorPicker.addEventListener('input', this.handleColorChange.bind(this));
+            this.colorPicker.addEventListener('change', this.handleColorChange.bind(this));
+            this.lineWidthPicker.addEventListener('input', this.handleLineWidthChange.bind(this));
+            this.lineWidthPicker.addEventListener('change', this.handleLineWidthChange.bind(this));
+            this.fontSizeInput.addEventListener('change', this.handleFontSizeChange.bind(this));
+            this.fontSizeInput.addEventListener('input', this.handleFontSizeChange.bind(this));
+            // --- End of listeners for input value changes ---
+
+            // --- New Canvas Enter Focus Logic ---
+            const handleCanvasMouseEnter = () => {
+                const activeElement = document.activeElement;
+                if (activeElement === this.colorPicker ||
+                    activeElement === this.lineWidthPicker ||
+                    activeElement === this.fontSizeInput) {
+
+                    activeElement.blur();
+                    setTimeout(() => {
+                        this.body.focus({ preventScroll: true });
+                    }, 0);
+                }
+            };
+
+            if (this.canvas) {
+                 this.canvas.addEventListener('mouseenter', handleCanvasMouseEnter);
+            }
+            // --- End of New Canvas Enter Focus Logic ---
+
 
             this.body.focus({ preventScroll: true }); this.updateCursorBasedOnContext(); this.updateTransformHandles();
         }
