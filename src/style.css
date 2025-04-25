@@ -1,0 +1,212 @@
+/* General Body Styles */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent scrollbars */
+  cursor: default; /* Default cursor */
+  font-family: sans-serif; /* Or your preferred font */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Main Canvas */
+#mainCanvas {
+  display: block;
+  background-color: #ffffff;
+}
+
+/* Toolbar Styles */
+#toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: rgba(230, 230, 230, 0.85);
+  padding: 8px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 100;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#toolbar label {
+  font-size: 13px;
+  margin-right: 3px;
+  color: #333;
+}
+
+#toolbar input[type="color"],
+#toolbar input[type="number"] {
+  height: 22px;
+  padding: 1px 3px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+#toolbar input[type="color"] {
+  width: 35px;
+  min-width: 35px;
+  padding: 1px;
+  cursor: pointer;
+}
+#toolbar input#lineWidthPicker,
+#toolbar input#fontSizeInput {
+  width: 45px;
+}
+
+
+/* Text Box Styling */
+.textBox {
+  position: absolute;
+  white-space: pre;
+  outline: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  background-color: transparent;
+  /* --- FIX for vertical cropping: Collapse container line height --- */
+  line-height: 0;
+  /* ------------------------------------------------------------- */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+/* --- REMOVED pointer-events: none to FIX HIT AREA --- */
+/* Clicks on KaTeX content should now bubble up to .textBox */
+/* ---------------------------------------------------- */
+
+
+/* Text Box - Active Editing State (ContentEditable) */
+.textBox[contenteditable="true"] {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  outline: none;
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+  /* --- FIX for vertical cropping: Restore normal line height for editing --- */
+  line-height: 1.2;
+  /* ----------------------------------------------------------------------- */
+}
+
+/* --- Hide Browser Spellcheck/Grammar Underlines --- */
+.textBox::spelling-error,
+.textBox::-webkit-spelling-error {
+  text-decoration: none;
+}
+.textBox::grammar-error,
+.textBox::-webkit-grammar-error {
+  text-decoration: none;
+}
+/* --- End Spellcheck Hiding --- */
+
+
+/* Selection Rectangle */
+#selectionRect {
+  position: absolute;
+  border: 1px dashed #007bff;
+  background-color: rgba(0, 123, 255, 0.1);
+  display: none;
+  z-index: 90;
+  pointer-events: none;
+}
+
+/* Node Handles Container */
+#nodeHandlesContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Individual Node Handles */
+.node-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid black;
+  background-color: white;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  pointer-events: all;
+  cursor: pointer;
+  display: none;
+  opacity: 0.8;
+  box-shadow: 0 0 1px rgba(0,0,0,0.4);
+}
+.node-handle:hover { opacity: 1.0; }
+.node-handle.element-focus-component { border-color: dodgerblue; background-color: lightblue; }
+.node-handle.element-selected { border-color: blue; background-color: dodgerblue; }
+
+/* Snap Indicator */
+#snapIndicatorElem {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid red;
+  background-color: rgba(255, 0, 0, 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  pointer-events: none;
+  z-index: 60;
+}
+
+/* Transform Handles (Rotate/Scale) */
+/* --- UPDATED: Icons only, no background/border, check positioning --- */
+#rotateHandleIcon,
+#scaleHandleIcon {
+  position: absolute;
+  width: auto; /* Let content dictate width */
+  height: auto; /* Let content dictate height */
+  background-color: transparent !important; /* Force no background */
+  border: none !important; /* Force no border */
+  border-radius: 0;
+  box-sizing: border-box;
+  cursor: grab;
+  display: none;
+  z-index: 95;
+  box-shadow: none !important; /* Force no shadow */
+  overflow: visible;
+  padding: 2px; /* Clickable area padding */
+  /* Transform handles positioning based on icon center */
+  /* JS calculates left/top to place the *center* of this element */
+  /* No translate needed here if JS sets left/top correctly */
+}
+
+/* Style symbols inside handles */
+#rotateHandleIcon::before,
+#scaleHandleIcon::before {
+  display: block;
+  color: black; /* Black symbol */
+  font-size: 18px; /* Slightly larger for visibility */
+  line-height: 1; /* Tight line height */
+  text-align: center;
+  font-weight: normal;
+  /* Width/Height auto from parent */
+}
+
+#rotateHandleIcon::before { content: '↻' !important;}
+#scaleHandleIcon::before { content: '⤡' !important; }
+/* --------------------------------------------------- */
+
+
+#rotateHandleIcon:active,
+#scaleHandleIcon:active {
+  cursor: grabbing;
+}
+#rotateHandleIcon:active::before,
+#scaleHandleIcon:active::before {
+  color: #555; /* Optional visual feedback */
+}
+

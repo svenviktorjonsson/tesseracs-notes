@@ -1,0 +1,23 @@
+{
+  "name": "tesseracs-notes",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "copy:vendor": "mkdirp public/vendor/katex && cpy node_modules/katex/dist/** public/vendor/katex",
+    "build": "esbuild src/script.js --bundle --outfile=public/bundle.js --minify --sourcemap",
+    "build:css": "esbuild src/style.css --bundle --outfile=public/bundle.css --minify",
+    "open": "open-cli public/index.html"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "cpy-cli": "^5.0.0",
+    "esbuild": "^0.25.3",
+    "katex": "^0.16.10",
+    "mkdirp": "^3.0.1",
+    "open-cli": "^8.0.0"
+  }
+}
