@@ -132,12 +132,12 @@ function formatStringToMathDisplay(originalString) {
         return '';
     }
 
-    // --- No changes to this regex ---
-    const tokenRegex = /(\\[a-zA-Z]_\[a-zA-Z])|(\\[a-zA-Z](?=\W|$))|(\\[a-zA-Z]{2,})|([a-zA-Z][a-zA-Z0-9]+)|(\$)|( )|([\s\S])/g;
+    // Updated regex to include åäöÅÄÖ in all [a-zA-Z] patterns
+    const tokenRegex = /(\\[a-zA-ZåäöÅÄÖ]_\[a-zA-ZåäöÅÄÖ])|(\\[a-zA-ZåäöÅÄÖ](?=\W|$))|(\\[a-zA-ZåäöÅÄÖ]{2,})|([a-zA-ZåäöÅÄÖ][a-zA-Z0-9åäöÅÄÖ]*)|(\$)|( )|([\s\S])/g;
     let lastIndex = 0;
     let match;
 
-    // --- No changes to tokenization logic ---
+    // Tokenization logic (unchanged)
     const tokens = [];
     tokenRegex.lastIndex = 0;
     while ((match = tokenRegex.exec(originalString)) !== null) {
@@ -167,18 +167,15 @@ function formatStringToMathDisplay(originalString) {
         } else if (space) {
             tokens.push({ type: 'space', value: space });
         } else if (other) {
-            // Crucially, { } [ ] etc. fall into 'other'
             tokens.push({ type: 'other', value: other });
         }
         lastIndex = match.index + match[0].length;
     }
-     // Add any remaining text
-     if (lastIndex < originalString.length) {
-         tokens.push({ type: 'other', value: originalString.slice(lastIndex) });
-     }
+    if (lastIndex < originalString.length) {
+        tokens.push({ type: 'other', value: originalString.slice(lastIndex) });
+    }
 
-
-    // --- Processing loop ---
+    // Processing loop (unchanged)
     let processedText = '';
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -190,67 +187,54 @@ function formatStringToMathDisplay(originalString) {
         } else if (token.type === 'backslashLetter') {
             processedText += `\\mathrm{${token.value}}`;
         } else if (token.type === 'word') {
-            // --- START: Added logic to check if word is an argument ---
             let isLikelyArgument = false;
             let prevIndex = i - 1;
 
-            // Look backwards over spaces
             while (prevIndex >= 0 && tokens[prevIndex].type === 'space') {
                 prevIndex--;
             }
 
-            // Check if the preceding non-space token is '{'
             if (prevIndex >= 0 && tokens[prevIndex].type === 'other' && tokens[prevIndex].value === '{') {
                 let cmdIndex = prevIndex - 1;
-                // Look backwards over spaces before the '{'
                 while (cmdIndex >= 0 && tokens[cmdIndex].type === 'space') {
                     cmdIndex--;
                 }
-                // Check if the token before that is a command
                 if (cmdIndex >= 0 && tokens[cmdIndex].type === 'command') {
-                    // Found the pattern: \command { word...
-                    // Or \command space { word...
                     isLikelyArgument = true;
                 }
             }
-            // --- END: Added logic ---
 
-            // --- Modified output based on the check ---
             if (isLikelyArgument) {
                 processedText += token.value; // Output argument word literally
             } else {
-                processedText += `\\mathrm{${token.value}}`; // Original logic for other words
+                processedText += `\\mathrm{${token.value}}`; // Wrap words in \mathrm{}
             }
         } else if (token.type === 'dollar') {
             processedText += '\\$';
         } else if (token.type === 'space') {
-            // --- No changes to space handling logic ---
             let escapeSpace = false;
             const prevToken = i > 0 ? tokens[i - 1] : null;
             const nextToken = i < tokens.length - 1 ? tokens[i + 1] : null;
 
-            if (prevToken && (prevToken.isWord /* Check original isWord flag */ )) {
-                 // Check if preceded by ^ or _ (using original logic structure)
-                 let charBeforePrevWord = '';
-                 let idx = i - 2;
-                 while (idx >= 0 && tokens[idx].type === 'space') { idx--; } // Skip spaces before the word
-                 if (idx >=0 && tokens[idx].type === 'other') {
-                     charBeforePrevWord = tokens[idx].value;
-                 }
-                 if (charBeforePrevWord !== '^' && charBeforePrevWord !== '_') {
-                     escapeSpace = true;
-                 }
+            if (prevToken && prevToken.isWord) {
+                let charBeforePrevWord = '';
+                let idx = i - 2;
+                while (idx >= 0 && tokens[idx].type === 'space') { idx--; }
+                if (idx >= 0 && tokens[idx].type === 'other') {
+                    charBeforePrevWord = tokens[idx].value;
+                }
+                if (charBeforePrevWord !== '^' && charBeforePrevWord !== '_') {
+                    escapeSpace = true;
+                }
             }
 
-             if (nextToken && (nextToken.isWord /* Check original isWord flag */ ) && !escapeSpace) {
-                 // Space before a word needs escape only if not already escaped by preceding logic
-                 escapeSpace = true;
-             }
+            if (nextToken && nextToken.isWord && !escapeSpace) {
+                escapeSpace = true;
+            }
 
             processedText += escapeSpace ? '\\ ' : ' ';
-
         } else if (token.type === 'other') {
-            processedText += token.value; // Pass other characters (like { } [ ] ^ _ etc.) through
+            processedText += token.value;
         }
     }
 

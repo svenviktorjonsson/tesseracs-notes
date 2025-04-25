@@ -3,7 +3,7 @@ import socketserver
 import os
 
 # Configuration
-PORT = 5001
+PORT = 5432
 DIRECTORY = "public"
 
 # Change to the public directory to serve static files

@@ -1476,235 +1476,228 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         handleMouseUp(event) {
-            const releasedButton = event.button; const screenX = event.clientX; const screenY = event.clientY; const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD; const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand'; const wasDraggingNodes = this.isDraggingNodes; const wasDraggingItems = this.isDraggingItems; const wasRotating = this.isRotating; const wasScaling = this.isScaling; const wasSelecting = this.isSelecting; const clickTargetInfo = this.clickedElementInfo;
+            const releasedButton = event.button;
+            const screenX = event.clientX;
+            const screenY = event.clientY;
+            const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD;
+            const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand';
+            const wasDraggingNodes = this.isDraggingNodes;
+            const wasDraggingItems = this.isDraggingItems;
+            const wasRotating = this.isRotating;
+            const wasScaling = this.isScaling;
+            const wasSelecting = this.isSelecting;
+            const clickTargetInfo = this.clickedElementInfo;
+
+            // Use the state exactly as it was at the end of the last mouseMove
             const finalDeltaAngle = this.currentRotationAngle;
-            // Use the scale factors calculated during the last mouseMove
             const finalScaleFactorX = this.currentScaleFactorX;
             const finalScaleFactorY = this.currentScaleFactorY;
-        
+
             let startPersistentStateForHistory = null;
-            if ((wasRotating || wasScaling) && this.dragStartStates.length > 0 && this.dragStartStates[0].startCenter && this.dragStartStates[0].startBBox) {
-                startPersistentStateForHistory = { angle: this.dragStartStates[0].startGroupRotation ?? 0, center: { ...this.dragStartStates[0].startCenter }, box: { ...this.dragStartStates[0].startBBox } };
-            } else {
-                startPersistentStateForHistory = { angle: this.selectionRotationAngle, center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : { x: 0, y: 0 }, box: this.initialBBox ? { ...this.initialBBox } : null };
+            // Capture the state *before* the transform/drag began for history/undo
+            if ((wasRotating || wasScaling || wasDraggingNodes || wasDraggingItems) && this.dragStartStates.length > 0) {
+                 // Prefer start state captured during the operation if available
+                 const firstState = this.dragStartStates[0];
+                 if(firstState.startCenter && firstState.startBBox){
+                    startPersistentStateForHistory = { angle: firstState.startGroupRotation ?? 0, center: { ...firstState.startCenter }, box: { ...firstState.startBBox } };
+                 } else {
+                    // Fallback to current persistent state if start state wasn't fully captured (shouldn't happen often)
+                    startPersistentStateForHistory = { angle: this.selectionRotationAngle, center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : { x: 0, y: 0 }, box: this.initialBBox ? { ...this.initialBBox } : null };
+                 }
             }
-        
+
+
             this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialTransformHandleClick = null;
-        
+
             // --- Right Click Release ---
             if (releasedButton === 2 && wasSelecting) {
-                 event.preventDefault();
-                 const wasSelectingRect = !this.potentialRightClick;
-                 let rectBounds = null;
-                 if (wasSelectingRect && this.selectionRectElem.style.display !== 'none') { rectBounds = this.selectionRectElem.getBoundingClientRect(); }
-                 this.selectionRectElem.style.display = 'none'; this.isSelecting = false; this.potentialRightClick = false;
-                 if (wasSelectingRect && rectBounds && rectBounds.width > 0 && rectBounds.height > 0) {
-                     let newlySelectedTextBoxesInRect = new Set(); let newlySelectedComponentsInRect = new Map();
-                     this.textBoxRegistry.forEach(boxData => { const el = boxData.element; if (!el || !el.offsetParent) return; const b = el.getBoundingClientRect(); const intersects = b.left < rectBounds.right && b.right > rectBounds.left && b.top < rectBounds.bottom && b.bottom > rectBounds.top; if (intersects) { newlySelectedTextBoxesInRect.add(el); } });
-                     this.selectionLevel = 'component'; this.elementSelectionActiveForComponentId = null; this.selectedNodes.clear(); this.selectedEdges.clear(); const processedNodesRect = new Set();
-                     this.nodeRegistry.forEach(node => { const nodeInBounds = node.x >= rectBounds.left && node.x <= rectBounds.right && node.y >= rectBounds.top && node.y <= rectBounds.bottom; if (nodeInBounds && !processedNodesRect.has(node.id)) { const { componentNodes, componentEdges, representativeId } = this.findConnectedComponent(node.id, 'node'); if (representativeId && (componentNodes.size > 0 || componentEdges.size > 0)) { if (!newlySelectedComponentsInRect.has(representativeId)) { newlySelectedComponentsInRect.set(representativeId, { componentNodes, componentEdges }); } componentNodes.forEach(nid => processedNodesRect.add(nid)); } } });
-                     const previouslySelectedTextBoxes = new Set(this.selectedTextBoxes); const previouslyActiveComponentData = new Map(this.activeComponentData); let finalSelectedTextBoxes = new Set(previouslySelectedTextBoxes); let finalActiveComponentData = new Map(previouslyActiveComponentData);
-                     if (this.isCtrlDown) { newlySelectedTextBoxesInRect.forEach(box => { if (previouslySelectedTextBoxes.has(box)) finalSelectedTextBoxes.delete(box); else finalSelectedTextBoxes.add(box); }); newlySelectedComponentsInRect.forEach((compData, compId) => { if (previouslyActiveComponentData.has(compId)) finalActiveComponentData.delete(compId); else finalActiveComponentData.set(compId, compData); }); }
-                     else if (this.isShiftDown) { newlySelectedTextBoxesInRect.forEach(box => finalSelectedTextBoxes.add(box)); newlySelectedComponentsInRect.forEach((compData, compId) => finalActiveComponentData.set(compId, compData)); }
-                     else { finalSelectedTextBoxes = newlySelectedTextBoxesInRect; finalActiveComponentData = newlySelectedComponentsInRect; }
-                     this.selectedTextBoxes = finalSelectedTextBoxes; this.activeComponentData = finalActiveComponentData;
-                     this.resetPersistentTransformState(); this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles();
-                 }
+                event.preventDefault();
+                const wasSelectingRect = !this.potentialRightClick;
+                let rectBounds = null;
+                if (wasSelectingRect && this.selectionRectElem.style.display !== 'none') { rectBounds = this.selectionRectElem.getBoundingClientRect(); }
+                this.selectionRectElem.style.display = 'none'; this.isSelecting = false; this.potentialRightClick = false;
+                if (wasSelectingRect && rectBounds && rectBounds.width > 0 && rectBounds.height > 0) {
+                    // ... (Selection logic remains the same) ...
+                    let newlySelectedTextBoxesInRect = new Set(); let newlySelectedComponentsInRect = new Map();
+                    this.textBoxRegistry.forEach(boxData => { const el = boxData.element; if (!el || !el.offsetParent) return; const b = el.getBoundingClientRect(); const intersects = b.left < rectBounds.right && b.right > rectBounds.left && b.top < rectBounds.bottom && b.bottom > rectBounds.top; if (intersects) { newlySelectedTextBoxesInRect.add(el); } });
+                    this.selectionLevel = 'component'; this.elementSelectionActiveForComponentId = null; this.selectedNodes.clear(); this.selectedEdges.clear(); const processedNodesRect = new Set();
+                    this.nodeRegistry.forEach(node => { const nodeInBounds = node.x >= rectBounds.left && node.x <= rectBounds.right && node.y >= rectBounds.top && node.y <= rectBounds.bottom; if (nodeInBounds && !processedNodesRect.has(node.id)) { const { componentNodes, componentEdges, representativeId } = this.findConnectedComponent(node.id, 'node'); if (representativeId && (componentNodes.size > 0 || componentEdges.size > 0)) { if (!newlySelectedComponentsInRect.has(representativeId)) { newlySelectedComponentsInRect.set(representativeId, { componentNodes, componentEdges }); } componentNodes.forEach(nid => processedNodesRect.add(nid)); } } });
+                    const previouslySelectedTextBoxes = new Set(this.selectedTextBoxes); const previouslyActiveComponentData = new Map(this.activeComponentData); let finalSelectedTextBoxes = new Set(previouslySelectedTextBoxes); let finalActiveComponentData = new Map(previouslyActiveComponentData);
+                    if (this.isCtrlDown) { newlySelectedTextBoxesInRect.forEach(box => { if (previouslySelectedTextBoxes.has(box)) finalSelectedTextBoxes.delete(box); else finalSelectedTextBoxes.add(box); }); newlySelectedComponentsInRect.forEach((compData, compId) => { if (previouslyActiveComponentData.has(compId)) finalActiveComponentData.delete(compId); else finalActiveComponentData.set(compId, compData); }); }
+                    else if (this.isShiftDown) { newlySelectedTextBoxesInRect.forEach(box => finalSelectedTextBoxes.add(box)); newlySelectedComponentsInRect.forEach((compData, compId) => finalActiveComponentData.set(compId, compData)); }
+                    else { finalSelectedTextBoxes = newlySelectedTextBoxesInRect; finalActiveComponentData = newlySelectedComponentsInRect; }
+                    this.selectedTextBoxes = finalSelectedTextBoxes; this.activeComponentData = finalActiveComponentData;
+                    this.resetPersistentTransformState(); this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles();
+                }
             }
             // --- Left Click Release ---
             else if (releasedButton === 0) {
                 if (wasDrawingFreehand) { this.finalizeCurrentDrawing(); }
+
                 // Finalize Rotation or Scaling
                 else if ((wasRotating || wasScaling) && startPersistentStateForHistory?.center && startPersistentStateForHistory?.box) {
                     const transformType = wasRotating ? 'rotate' : 'scale';
-                    const transformHistory = { type: 'transform_items', transformType: transformType, center: { ...startPersistentStateForHistory.center }, items: [], startAngle: startPersistentStateForHistory.angle, startCenter: { ...startPersistentStateForHistory.center }, startBBox: { ...startPersistentStateForHistory.box }, endScaleX: 1, endScaleY: 1 };
+                    const transformHistory = {
+                        type: 'transform_items', transformType: transformType,
+                        center: { ...startPersistentStateForHistory.center }, items: [],
+                        startAngle: startPersistentStateForHistory.angle,
+                        startCenter: { ...startPersistentStateForHistory.center },
+                        startBBox: { ...startPersistentStateForHistory.box },
+                        endScaleX: finalScaleFactorX,
+                        endScaleY: finalScaleFactorY
+                    };
                     let transformApplied = false;
                     const rotationCenter = startPersistentStateForHistory.center;
-        
-                    // Recalculate final scales based on mouse position *at release* using the same logic as mouseMove
-                    let finalActualScaleX = 1;
-                    let finalActualScaleY = 1;
+
                     let finalFontSizeScale = 1;
-        
-                    if(wasScaling){
-                        const startBBox = startPersistentStateForHistory.box;
-                        const startGroupRotation = startPersistentStateForHistory.angle;
-                        const cosA = Math.cos(-startGroupRotation); const sinA = Math.sin(-startGroupRotation);
-        
-                        const currentVecOrig = { x: screenX - rotationCenter.x, y: screenY - rotationCenter.y };
-                        const currentVecLocal = { x: currentVecOrig.x * cosA - currentVecOrig.y * sinA, y: currentVecOrig.x * sinA + currentVecOrig.y * cosA };
-        
-                        const startHalfWidth = (startBBox.width / 2) || 1e-6;
-                        const startHalfHeight = (startBBox.height / 2) || 1e-6;
-        
-                        const scaleX_needed = currentVecLocal.x / startHalfWidth;
-                        const scaleY_needed = currentVecLocal.y / startHalfHeight;
-        
-                        const hasNodes = this.dragStartStates.some(s => s.type === 'node');
+                    if (wasScaling) {
                         const hasText = this.dragStartStates.some(s => s.type === 'text');
                         const maintainAspect = hasText || this.isCtrlDown;
-        
-                        if (maintainAspect) {
-                            const s = Math.max(Math.abs(scaleX_needed), Math.abs(scaleY_needed));
-                            finalActualScaleX = s * Math.sign(scaleX_needed || 1);
-                            finalActualScaleY = s * Math.sign(scaleY_needed || 1);
-                            finalFontSizeScale = s;
-                        } else {
-                            finalActualScaleX = scaleX_needed;
-                            finalActualScaleY = scaleY_needed;
-                            finalFontSizeScale = Math.sqrt(Math.abs(finalActualScaleX * finalActualScaleY));
-                        }
-        
-                        finalActualScaleX = Math.max(this.MIN_SCALE, Math.abs(finalActualScaleX)) * Math.sign(finalActualScaleX || 1);
-                        finalActualScaleY = Math.max(this.MIN_SCALE, Math.abs(finalActualScaleY)) * Math.sign(finalActualScaleY || 1);
+                        if (maintainAspect) { const s = Math.min(Math.abs(finalScaleFactorX), Math.abs(finalScaleFactorY)); finalFontSizeScale = s;}
+                        else { finalFontSizeScale = Math.sqrt(Math.abs(finalScaleFactorX * finalScaleFactorY)); }
                         finalFontSizeScale = Math.max(this.MIN_SCALE, Math.abs(finalFontSizeScale));
-        
-                        transformHistory.endScaleX = finalActualScaleX;
-                        transformHistory.endScaleY = finalActualScaleY;
                     }
-        
-                    // Calculate final state for history record
+
                     this.dragStartStates.forEach(itemState => {
-                        let finalX, finalY, finalRotation, finalFontSize;
-                        const startX_orig = itemState.startX; const startY_orig = itemState.startY;
-                        const startRotation_orig = itemState.startRotation ?? (itemState.startGroupRotation ?? 0);
-                        const startFontSize_orig = itemState.startFontSize;
-                        const startGroupRotation = itemState.startGroupRotation ?? 0;
-        
-                        let startCenterX, startCenterY;
-                        if (itemState.type === 'node') {
-                            startCenterX = startX_orig;
-                            startCenterY = startY_orig;
-                        } else if (itemState.type === 'text') {
-                            startCenterX = startX_orig + (itemState.startWidth / 2);
-                            startCenterY = startY_orig + (itemState.startHeight / 2);
-                        } else { return; }
-        
-                        const startRelCenterX = startCenterX - rotationCenter.x;
-                        const startRelCenterY = startCenterY - rotationCenter.y;
-        
-                        if (wasRotating) {
-                            const cosDelta = Math.cos(finalDeltaAngle); const sinDelta = Math.sin(finalDeltaAngle);
-                            const rotatedRelX = startRelCenterX * cosDelta - startRelCenterY * sinDelta;
-                            const rotatedRelY = startRelCenterX * sinDelta + startRelCenterY * cosDelta;
-                            const endCenterX = rotationCenter.x + rotatedRelX; const endCenterY = rotationCenter.y + rotatedRelY;
-                            finalRotation = startRotation_orig + finalDeltaAngle; finalFontSize = startFontSize_orig;
+                         let finalX, finalY, finalRotation, finalFontSize;
+                         const startX_orig = itemState.startX; const startY_orig = itemState.startY;
+                         const startRotation_orig = itemState.startRotation ?? 0;
+                         const startFontSize_orig = itemState.startFontSize;
+                         const startGroupRotation = itemState.startGroupRotation ?? 0;
+                         let startCenterX, startCenterY;
+                         if (itemState.type === 'node') { startCenterX = startX_orig; startCenterY = startY_orig; }
+                         else if (itemState.type === 'text') { startCenterX = startX_orig + (itemState.startWidth / 2); startCenterY = startY_orig + (itemState.startHeight / 2); }
+                         else { return; }
+                         const startRelCenterX = startCenterX - rotationCenter.x; const startRelCenterY = startCenterY - rotationCenter.y;
+
+                         if (wasRotating) {
+                             const cosDelta = Math.cos(finalDeltaAngle); const sinDelta = Math.sin(finalDeltaAngle);
+                             const rotatedRelX = startRelCenterX * cosDelta - startRelCenterY * sinDelta; const rotatedRelY = startRelCenterX * sinDelta + startRelCenterY * cosDelta;
+                             const endCenterX = rotationCenter.x + rotatedRelX; const endCenterY = rotationCenter.y + rotatedRelY;
+                             finalRotation = startRotation_orig + finalDeltaAngle; finalFontSize = startFontSize_orig;
                              if(itemState.type === 'node'){ finalX = endCenterX; finalY = endCenterY; }
-                             else {
-                                 const d = this.textBoxRegistry.get(itemState.id);
-                                 const finalWidth = d?.element?.offsetWidth ?? itemState.startWidth;
-                                 const finalHeight = d?.element?.offsetHeight ?? itemState.startHeight;
-                                 finalX = endCenterX - finalWidth / 2;
-                                 finalY = endCenterY - finalHeight / 2;
-                             }
-                        } else { // wasScaling
-                              const cosStart = Math.cos(-startGroupRotation); const sinStart = Math.sin(-startGroupRotation);
-                              const localRelX = startRelCenterX * cosStart - startRelCenterY * sinStart;
-                              const localRelY = startRelCenterX * sinStart + startRelCenterY * cosStart;
-                              const scaledLocalRelX = localRelX * finalActualScaleX;
-                              const scaledLocalRelY = localRelY * finalActualScaleY;
-                              const cosEnd = Math.cos(startGroupRotation); const sinEnd = Math.sin(startGroupRotation);
-                              const scaledRelX = scaledLocalRelX * cosEnd - scaledLocalRelY * sinEnd;
-                              const scaledRelY = scaledLocalRelX * sinEnd + scaledLocalRelY * cosEnd;
-        
+                             else { const d = this.textBoxRegistry.get(itemState.id); const currentWidth = d?.element?.offsetWidth ?? itemState.startWidth; const currentHeight = d?.element?.offsetHeight ?? itemState.startHeight; finalX = endCenterX - currentWidth / 2; finalY = endCenterY - currentHeight / 2;}
+                         } else { // wasScaling
+                             const cosStart = Math.cos(-startGroupRotation); const sinStart = Math.sin(-startGroupRotation); const localRelX = startRelCenterX * cosStart - startRelCenterY * sinStart; const localRelY = startRelCenterX * sinStart + startRelCenterY * cosStart;
+                             const scaledLocalRelX = localRelX * finalScaleFactorX; const scaledLocalRelY = localRelY * finalScaleFactorY;
+                             const cosEnd = Math.cos(startGroupRotation); const sinEnd = Math.sin(startGroupRotation); const scaledRelX = scaledLocalRelX * cosEnd - scaledLocalRelY * sinEnd; const scaledRelY = scaledLocalRelX * sinEnd + scaledLocalRelY * cosEnd;
                              const endCenterX = rotationCenter.x + scaledRelX; const endCenterY = rotationCenter.y + scaledRelY;
-                             finalRotation = startRotation_orig; // Rotation doesn't change
-                             finalFontSize = Math.round((startFontSize_orig || 16) * finalFontSizeScale);
-                             finalFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, finalFontSize));
+                             finalRotation = startRotation_orig; finalFontSize = Math.round((startFontSize_orig || 16) * finalFontSizeScale); finalFontSize = Math.max(this.MIN_FONT_SIZE, Math.min(this.MAX_FONT_SIZE, finalFontSize));
                              if(itemState.type === 'node'){ finalX = endCenterX; finalY = endCenterY; }
-                             else {
-                                 const d = this.textBoxRegistry.get(itemState.id);
-                                 // Use final calculated size after potential font change
-                                 const finalWidth = d?.element?.offsetWidth ?? itemState.startWidth;
-                                 const finalHeight = d?.element?.offsetHeight ?? itemState.startHeight;
-                                 finalX = endCenterX - finalWidth / 2;
-                                 finalY = endCenterY - finalHeight / 2;
-                             }
-                        }
-        
-                        let moved = false;
-                         if(finalX !== undefined && finalY !== undefined){
-                            if(itemState.type === 'node') { moved = Math.abs(finalX - itemState.startX) > 0.1 || Math.abs(finalY - itemState.startY) > 0.1; }
-                            else if (itemState.type === 'text') { moved = Math.abs(finalX - itemState.startX) > 0.1 || Math.abs(finalY - itemState.startY) > 0.1 || Math.abs(finalRotation - (itemState.startRotation ?? 0)) > 0.01 || Math.abs(finalFontSize - (itemState.startFontSize ?? 0)) > 0.1; }
+                             else { const d = this.textBoxRegistry.get(itemState.id); const currentWidth = d?.element?.offsetWidth ?? itemState.startWidth; const currentHeight = d?.element?.offsetHeight ?? itemState.startHeight; finalX = endCenterX - currentWidth / 2; finalY = endCenterY - currentHeight / 2; }
                          }
-        
-                        if (moved) {
-                            transformHistory.items.push({
-                                id: itemState.id, type: itemState.type,
-                                startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY,
-                                startWidth: itemState.startWidth, startHeight: itemState.startHeight,
-                                startRotation: itemState.startRotation ?? 0, endRotation: finalRotation,
-                                startFontSize: itemState.startFontSize, endFontSize: finalFontSize,
-                                startScaleX: 1, startScaleY: 1,
-                                endScaleX: wasScaling ? finalActualScaleX : 1,
-                                endScaleY: wasScaling ? finalActualScaleY : 1
-                            });
-                            transformApplied = true;
-                        }
+
+                         let moved = false;
+                         if (finalX !== undefined && finalY !== undefined) {
+                             if (itemState.type === 'node') { moved = Math.abs(finalX - itemState.startX) > 0.1 || Math.abs(finalY - itemState.startY) > 0.1; }
+                             else if (itemState.type === 'text') { moved = Math.abs(finalX - itemState.startX) > 0.1 || Math.abs(finalY - itemState.startY) > 0.1 || Math.abs(finalRotation - startRotation_orig) > 0.01 || Math.abs(finalFontSize - (startFontSize_orig ?? 0)) > 0.1; }
+                         }
+
+                         if (moved) {
+                             transformHistory.items.push({ id: itemState.id, type: itemState.type, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startWidth: itemState.startWidth, startHeight: itemState.startHeight, startRotation: startRotation_orig, endRotation: finalRotation, startFontSize: startFontSize_orig, endFontSize: finalFontSize, startScaleX: 1, startScaleY: 1, endScaleX: finalScaleFactorX, endScaleY: finalScaleFactorY });
+                             transformApplied = true;
+                         }
                     });
-        
-        
+
                     if (transformApplied) {
-                        this.applyTransform(transformHistory.items, false);
+                        this.applyTransform(transformHistory.items, false); // Apply final calculated state
                         this.addHistory(transformHistory);
                     }
-        
-                    // Update Persistent State AFTER transform
+
+                    // Update Persistent State
                     const startGroupRotation_mu = startPersistentStateForHistory.angle;
-                    const finalDeltaAngle_mu = finalDeltaAngle;
-                    const newPersistentAngle = startGroupRotation_mu + (wasRotating ? finalDeltaAngle_mu : 0);
+                    const newPersistentAngle = startGroupRotation_mu + (wasRotating ? finalDeltaAngle : 0);
                     this.selectionRotationAngle = newPersistentAngle;
-                    this.scaleRotateCenter = { ...startPersistentStateForHistory.center };
-        
-                    let newWidth = startPersistentStateForHistory.box.width;
-                    let newHeight = startPersistentStateForHistory.box.height;
-                    if (wasScaling) {
-                        newWidth *= Math.abs(finalActualScaleX);
-                        newHeight *= Math.abs(finalActualScaleY);
-                    }
-                     if (newWidth >= 0 && newHeight >= 0) {
-                         this.initialBBox = {
-                             centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y,
-                             width: newWidth, height: newHeight,
-                             minX: this.scaleRotateCenter.x - newWidth / 2, minY: this.scaleRotateCenter.y - newHeight / 2,
-                             maxX: this.scaleRotateCenter.x + newWidth / 2, maxY: this.scaleRotateCenter.y + newHeight / 2
-                         };
-                     } else {
-                          this.initialBBox = null;
-                     }
-        
+                    this.scaleRotateCenter = { ...startPersistentStateForHistory.center }; // Center doesn't change
+                    let newWidth = startPersistentStateForHistory.box.width; let newHeight = startPersistentStateForHistory.box.height;
+                    if (wasScaling) { newWidth *= Math.abs(finalScaleFactorX); newHeight *= Math.abs(finalScaleFactorY); }
+                    if (newWidth >= 0 && newHeight >= 0) { this.initialBBox = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: newWidth, height: newHeight, minX: this.scaleRotateCenter.x - newWidth / 2, minY: this.scaleRotateCenter.y - newHeight / 2, maxX: this.scaleRotateCenter.x + newWidth / 2, maxY: this.scaleRotateCenter.y + newHeight / 2 }; }
+                    else { this.initialBBox = null; }
                     this.isRotating = false; this.isScaling = false;
                 }
                 // Finalize Node Drag
                 else if (wasDraggingNodes) {
                     const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y;
-                    const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { const finalX = node.x; const finalY = node.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY }); } } } });
+                    const moves = [];
+                    this.dragStartStates.forEach(itemState => { if (itemState.type === 'node') { const node = this.nodeRegistry.get(itemState.id); if (node) { const finalX = node.x; const finalY = node.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY }); } } } });
                     if (moves.length > 0) { this.addHistory({ type: 'move_nodes', moves: moves }); }
-                    const startState = this.dragStartStates[0]; if (startState?.startCenter && startState.startBBox && this.scaleRotateCenter && this.initialBBox) { const initialDragCenter = startState.startCenter; this.scaleRotateCenter.x = initialDragCenter.x + dx; this.scaleRotateCenter.y = initialDragCenter.y + dy; this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y; this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2; this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2; } else { this.resetPersistentTransformState(); }
+                    // Update persistent state - This should be correct as is
+                    if (startPersistentStateForHistory?.center && startPersistentStateForHistory?.box) { const initialDragCenter = startPersistentStateForHistory.center; this.scaleRotateCenter.x = initialDragCenter.x + dx; this.scaleRotateCenter.y = initialDragCenter.y + dy; this.initialBBox = { ...startPersistentStateForHistory.box }; this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y; this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2; this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2; }
+                    else { this.resetPersistentTransformState(); }
                     this.isDraggingNodes = false;
                 }
                 // Finalize Text Box Drag
                 else if (wasDraggingItems) {
                     this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto';
                     const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y;
-                    const moves = []; this.dragStartStates.forEach(itemState => { if (itemState.type === 'text') { const boxData = this.textBoxRegistry.get(itemState.id); if (boxData) { const finalX = boxData.x; const finalY = boxData.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startRotation: itemState.startRotation, endRotation: itemState.startRotation, startFontSize: itemState.startFontSize, endFontSize: itemState.startFontSize }); } } } });
-                    if (moves.length > 0) { this.addHistory({ type: 'move_text', moves: moves }); }
-                    const startState = this.dragStartStates[0]; if (startState?.startCenter && startState.startBBox && this.scaleRotateCenter && this.initialBBox) { const initialDragCenter = startState.startCenter; this.scaleRotateCenter.x = initialDragCenter.x + dx; this.scaleRotateCenter.y = initialDragCenter.y + dy; this.initialBBox.centerX = this.scaleRotateCenter.x; this.initialBBox.centerY = this.scaleRotateCenter.y; this.initialBBox.minX = this.scaleRotateCenter.x - this.initialBBox.width / 2; this.initialBBox.maxX = this.scaleRotateCenter.x + this.initialBBox.width / 2; this.initialBBox.minY = this.scaleRotateCenter.y - this.initialBBox.height / 2; this.initialBBox.maxY = this.scaleRotateCenter.y + this.initialBBox.height / 2; } else { this.resetPersistentTransformState(); }
+                    const moves = [];
+
+                    // Create history entry based on final positions from registry (set by last mouseMove)
+                    this.dragStartStates.forEach(itemState => {
+                        if (itemState.type === 'text') {
+                            const boxData = this.textBoxRegistry.get(itemState.id);
+                            if (boxData) {
+                                const finalX = boxData.x; const finalY = boxData.y;
+                                const itemRotation = boxData.rotation ?? itemState.startRotation ?? 0;
+                                const itemFontSize = parseFloat(boxData.fontSize || itemState.startFontSize || '16px');
+                                // Check if position actually changed substantially since drag start
+                                if (Math.abs(finalX - itemState.startX) > 0.1 || Math.abs(finalY - itemState.startY) > 0.1) {
+                                    moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startRotation: itemState.startRotation, endRotation: itemRotation, startFontSize: itemState.startFontSize, endFontSize: itemFontSize });
+                                }
+                            }
+                        }
+                    });
+                    if (moves.length > 0) {
+                        this.addHistory({ type: 'move_text', moves: moves });
+                    }
+
+                    // *** CHANGE: Remove persistent state update here ***
+                    // Assume the persistent state was correctly updated during the last handleMouseMove
+                    // If startPersistentStateForHistory is missing here, it indicates a deeper problem
+                    if (!startPersistentStateForHistory?.center || !startPersistentStateForHistory?.box) {
+                         console.warn("Drag ended without valid start persistent state captured.");
+                         // Attempt to recalculate or reset? Resetting is safer.
+                         this.resetPersistentTransformState();
+                     } else {
+                        // We trust the state set by mouseMove.
+                        // Verify the final state is consistent (optional debug check)
+                        // const expectedCenterX = startPersistentStateForHistory.center.x + dx;
+                        // const expectedCenterY = startPersistentStateForHistory.center.y + dy;
+                        // if (Math.abs(this.scaleRotateCenter.x - expectedCenterX) > 1 || Math.abs(this.scaleRotateCenter.y - expectedCenterY) > 1) {
+                        //    console.warn("Potential mismatch between mouseUp delta and mouseMove persistent state update");
+                        //}
+                     }
+
                     this.isDraggingItems = false;
                 }
-                 // Simple Click (No Drag/Draw/Transform)
-                 else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
-                     if (clickTargetInfo && clickTargetInfo.type === 'text') { const targetBox = this.textBoxRegistry.get(clickTargetInfo.id)?.element; if (targetBox && this.selectedTextBoxes.has(targetBox) && this.selectedTextBoxes.size === 1 && this.activeComponentData.size === 0) { /* Prep for dblclick */ } }
-                 }
-            }
-        
+                // Simple Click (No Drag/Draw/Transform)
+                else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
+                    if (clickTargetInfo && clickTargetInfo.type === 'text') {
+                        const targetBox = this.textBoxRegistry.get(clickTargetInfo.id)?.element;
+                        if (targetBox && this.selectedTextBoxes.has(targetBox) && this.selectedTextBoxes.size === 1 && this.activeComponentData.size === 0) { /* Prep for dblclick */ }
+                    }
+                }
+            } // End Left Click Release
+
             // --- Reset States ---
-            this.mouseDownButton = -1; this.isDraggingNodes = false; this.isDraggingItems = false; this.isRotating = false; this.isScaling = false; this.isSelecting = false; this.dragStartStates = []; this.snapTargetNode = null; this.potentialDragTarget = null; this.clickedElementInfo = null; this.potentialRightClick = false;
-            this.currentRotationAngle = 0; this.currentScaleFactor = 1; this.currentScaleFactorX = 1; this.currentScaleFactorY = 1;
+            this.mouseDownButton = -1;
+            this.isSelecting = false;
+            this.dragStartStates = [];
+            this.snapTargetNode = null;
+            this.potentialDragTarget = null;
+            this.clickedElementInfo = null;
+            this.potentialRightClick = false;
+            this.currentRotationAngle = 0;
+            this.currentScaleFactor = 1;
+            this.currentScaleFactorX = 1;
+            this.currentScaleFactorY = 1;
             if (this.isAltDrawing && !this.isAltDown) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; }
-        
+
             // --- Final UI Update ---
-            this.updateCursorBasedOnContext(); this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles();
+            this.updateCursorBasedOnContext();
+            this.redrawCanvas();
+            this.updateNodeHandles();
+            this.updateTransformHandles();
         }
         finalizeCurrentDrawing() {
             if (!this.isDrawing && !this.isAltDrawing) return;
