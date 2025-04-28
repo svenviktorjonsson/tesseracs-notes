@@ -27,12 +27,8 @@ export class TextBox {
         this._initialStateOnScaleStart = null;
 
         this._createElement();
-        this._measureRenderedSize();
 
-        if (this.element && this.width > 0 && this.height > 0) {
-            this.element.style.width = `${this.width}px`;
-            this.element.style.height = `${this.height}px`;
-        } else if (this.element) {
+        if (this.element) {
              console.warn(`[${this.id}] Initial measurement zero dimensions. Setting fallback style size.`);
              this.element.style.width = '10px';
              this.element.style.height = '16px';
@@ -95,45 +91,65 @@ export class TextBox {
         this.containerElement.appendChild(this.element);
      }
 
-    _measureRenderedSize() {
+     _measureRenderedSize() {
         if (!this.element) return { width: 0, height: 0 };
-        this.element.style.fontSize = this.fontSize;
-        this.element.style.color = this.color;
+
+        // Store current inline styles to restore them later
         const prevWidth = this.element.style.width;
         const prevHeight = this.element.style.height;
         const prevTransform = this.element.style.transform;
-        this.element.style.width = '';
-        this.element.style.height = '';
-        this.element.style.transform = '';
+        const prevWhiteSpace = this.element.style.whiteSpace;
+        const prevDisplay = this.element.style.display;
+        const prevTextAlign = this.element.style.textAlign;
+        const prevJustifyContent = this.element.style.justifyContent;
+        const prevAlignItems = this.element.style.alignItems;
+
+        // Temporarily reset styles that affect measurement
+        this.element.style.fontSize = this.fontSize; // Ensure correct font size for measurement
+        this.element.style.color = this.color;       // Ensure correct color (though less likely to affect size)
+        this.element.style.width = 'auto';
+        this.element.style.height = 'auto';
+        this.element.style.transform = ''; // Remove transform for accurate scrollWidth/Height
+
         let measuredWidth = 0;
         let measuredHeight = 0;
         const minHeightFromFontSize = Math.max(1, parseFloat(this.fontSize) || 16);
 
         if (this.isEditing) {
-            this.element.innerHTML = '';
-            this.element.textContent = this.text || '\u00A0';
-            this.element.style.whiteSpace = 'pre-wrap';
-            this.element.style.textAlign = 'left';
+            // Measurement during editing (plain text)
+            this.element.style.display = 'block'; // Use block for measurement
+            this.element.style.whiteSpace = 'pre'; // Use pre for measurement
+            this.element.style.textAlign = 'left'; // Use left align for measurement
+            // Temporarily set content for measurement if needed (usually done in enterEditMode)
+            // this.element.textContent = this.text || '\u00A0';
+
             measuredWidth = this.element.scrollWidth;
             measuredHeight = this.element.scrollHeight;
+
+            // Add minimum width for empty editable box
             if (!this.text || this.text.trim() === '') {
                 measuredWidth = Math.max(measuredWidth, 10);
             }
         } else {
-            this.element.style.whiteSpace = 'nowrap';
-            this.element.style.textAlign = 'center';
+            // Measurement during display (KaTeX)
+            this.element.style.display = 'inline-block'; // Use inline-block for measurement
+            this.element.style.whiteSpace = 'nowrap'; // Use nowrap for measurement
+            this.element.style.textAlign = 'center'; // Use center for measurement
+
             const { formatStringToMathDisplay, renderStringToElement } = this.utils;
             let katexInputString;
             let renderSuccess = false;
+
             try {
-                katexInputString = formatStringToMathDisplay(this.text || '\\phantom{}');
+                katexInputString = formatStringToMathDisplay(this.text || '\\phantom{}'); // Use phantom for empty
             } catch (error) {
                 console.error(`[${this.id}] Error formatting text:`, error);
                 this.element.textContent = `Format Err!`;
                 katexInputString = undefined;
             }
+
             if (katexInputString !== undefined) {
-                this.element.innerHTML = '';
+                this.element.innerHTML = ''; // Clear before rendering
                 try {
                     renderStringToElement(this.element, katexInputString);
                     renderSuccess = true;
@@ -143,27 +159,47 @@ export class TextBox {
                     renderSuccess = false;
                 }
             }
+
+            // Measure width using scrollWidth
             measuredWidth = this.element.scrollWidth;
+
+            // --- Try to measure a tighter height using .base element ---
+            let tempHeight = 0;
             if (renderSuccess) {
-                const katexHtmlElement = this.element.querySelector('.katex-html');
-                if (katexHtmlElement instanceof HTMLElement) {
-                    measuredHeight = katexHtmlElement.offsetHeight;
-                    if (measuredHeight <= 0) {
-                        measuredHeight = this.element.scrollHeight;
+                const baseElement = this.element.querySelector('.base'); // Target .base span
+                if (baseElement instanceof HTMLElement) {
+                    tempHeight = baseElement.offsetHeight;
+                    // Optional adjustment: tempHeight += 2;
+                } else { // Fallback if .base not found
+                    const katexHtmlElement = this.element.querySelector('.katex-html');
+                    if (katexHtmlElement instanceof HTMLElement) {
+                        tempHeight = katexHtmlElement.offsetHeight;
                     }
-                } else {
-                    measuredHeight = this.element.scrollHeight;
                 }
-            } else {
-                measuredHeight = this.element.scrollHeight;
             }
+            // If specific measurement failed, fallback to scrollHeight
+            if (tempHeight <= 0) {
+                tempHeight = this.element.scrollHeight;
+            }
+            measuredHeight = tempHeight;
+            // Ensure minimum width if rendering failed or content is empty
             if (measuredWidth <= 0) measuredWidth = 10;
         }
+
+        // Restore previous inline styles
         this.element.style.width = prevWidth;
         this.element.style.height = prevHeight;
         this.element.style.transform = prevTransform;
+        this.element.style.whiteSpace = prevWhiteSpace;
+        this.element.style.display = prevDisplay;
+        this.element.style.textAlign = prevTextAlign;
+        this.element.style.justifyContent = prevJustifyContent;
+        this.element.style.alignItems = prevAlignItems;
+
+        // Update internal dimensions, ensuring minimums
         this.width = Math.max(1, measuredWidth);
         this.height = Math.max(1, minHeightFromFontSize, measuredHeight);
+
         return { width: this.width, height: this.height };
     }
 
@@ -374,75 +410,82 @@ export class TextBox {
     }
 
     enterEditMode() {
-        if (!this.element || this.isEditing) return;
-        if (this._isScaling) this.finalizeScale();
+        if (!this.element || this.isEditing) return; // Exit if no element or already editing
+        if (this._isScaling) this.finalizeScale(); // Ensure scaling is finished if it was active
+
         this.isEditing = true;
-        const currentCenterX = this.x + this.width / 2;
-        const currentCenterY = this.y + this.height / 2;
-        const hasValidCenter = !isNaN(currentCenterX) && !isNaN(currentCenterY) && this.width > 0 && this.height > 0;
 
-        this._measureRenderedSize();
+        // --- Prepare element content and size for editing ---
+        this.element.innerHTML = ''; // **NEW:** Clear previous KaTeX/HTML structure
+        this.element.textContent = this.text; // **NEW:** Set raw text content for editing
+        this.element.style.width = 'auto';   // **NEW:** Let width be determined by content/CSS, clearing previous fixed/fallback width
+        this.element.style.height = 'auto';  // **NEW:** Let height be determined by content/CSS, clearing previous fixed/fallback height
 
-        if (this.width > 0 && this.height > 0) {
-            this.element.style.width = `${this.width}px`;
-            this.element.style.height = `${this.height}px`;
-        }
+        // --- REMOVED --- measurement, explicit size setting, and position update logic ---
+    
+        // --- Apply styles specifically for editing ---
+        this.element.style.display = 'block';    // **NEW:** Use block display for predictable text flow
+        this.element.style.whiteSpace = 'pre';     // **NEW:** Prevent auto-wrapping, respect user spaces/newlines
+        this.element.style.overflowX = 'auto';   // **NEW:** Add horizontal scroll if content exceeds container
+        this.element.style.overflowY = 'visible';// **NEW:** Allow vertical overflow (or use 'auto' if vertical scroll is desired)
+        this.element.style.textAlign = 'left';     // **NEW:** Align text to the left for standard editing
+        this.element.style.transform = ''; // Remove rotation/scale transform during edit (Keep this)
 
-        if (hasValidCenter) {
-            this._updatePositionAndSize(currentCenterX, currentCenterY);
-        } else {
-            this._updatePositionAndSize(this.x + this.width / 2, this.y + this.height / 2);
-        }
+        // --- Set editing attributes and classes ---
+        this.element.contentEditable = 'true'; // Keep this
+        this.element.classList.add('writing-mode'); // Keep this
 
-        this.element.contentEditable = 'true';
-        this.element.classList.add('writing-mode');
-        this.element.style.cursor = 'text';
-        this.element.style.outline = '1px dashed #888';
-        this.element.style.webkitUserSelect = 'text';
-        this.element.style.userSelect = 'text';
-        this.element.style.overflow = 'visible';
-        this.element.style.transform = ''; // Remove rotation/scale during edit
+        // --- Set interactive styles for editing ---
+        this.element.style.cursor = 'text'; // Keep this
+        this.element.style.userSelect = 'text'; // Keep this (standard)
+        this.element.style.webkitUserSelect = 'text'; // **NEW:** Add for Safari/Chrome text selection consistency
 
-        this.element.focus({ preventScroll: true });
-        this.utils.moveCaretToEnd(this.element);
+        // --- Focus and caret ---
+        this.element.focus({ preventScroll: true }); // Keep this
+        // Use setTimeout for robustness, ensuring focus is set before moving caret
+        setTimeout(() => {
+                if(this.element && this.utils.moveCaretToEnd) { // Check element still exists
+                    this.utils.moveCaretToEnd(this.element);
+                }
+        }, 0); // Keep this
     }
 
     exitEditMode() {
-        if (!this.element || !this.isEditing) return { textChanged: false };
+        if (!this.element || !this.isEditing) return { textChanged: false }; // Exit if not editing
+
+        // Get the final text content from the editable element
         const newText = this.element.textContent || '';
         const textChanged = this.text !== newText;
+        this.text = newText; // Update internal text state
+
+        // Mark as not editing anymore
         this.isEditing = false;
 
-        const currentW = typeof this.width === 'number' && this.width > 0 ? this.width : 0;
-        const currentH = typeof this.height === 'number' && this.height > 0 ? this.height : 0;
-        const currentX = typeof this.x === 'number' && !isNaN(this.x) ? this.x : 0;
-        const currentY = typeof this.y === 'number' && !isNaN(this.y) ? this.y : 0;
-        const currentCenterX = currentX + currentW / 2;
-        const currentCenterY = currentY + currentH / 2;
-        const hasValidCenter = currentW > 0 && currentH > 0 && !isNaN(currentCenterX) && !isNaN(currentCenterY);
+        // --- Render content (this measures, sets width/height inline, positions) --- 
+        this.renderContent(this.text); // Re-render with KaTeX, updates size and position
 
-        this.element.contentEditable = 'false';
-        this.element.classList.remove('writing-mode');
-        this.element.style.cursor = 'pointer';
-        this.element.style.outline = 'none';
-        this.element.style.webkitUserSelect = 'none';
-        this.element.style.userSelect = 'none';
-        this.element.style.overflow = 'visible';
+        // --- Restore display attributes and styles ---
+        this.element.contentEditable = 'false'; // Turn off editing
+        this.element.classList.remove('writing-mode'); // Remove editing class
 
-        this.text = newText;
-        this.renderContent(this.text); // This handles measure, style set, position, transform
+        // --- Clear inline styles that were specific to edit mode ---
+        // This allows the CSS rules for the base .textBox class to take effect
+        this.element.style.display = ''; // Resets to CSS rule (e.g., inline-block)
+        this.element.style.whiteSpace = ''; // Resets to CSS rule (e.g., nowrap)
+        this.element.style.textAlign = ''; // Resets to CSS rule (e.g., center)
+        this.element.style.overflowX = ''; // Resets to default (visible)
+        this.element.style.overflowY = ''; // Resets to default (visible)
+        this.element.style.lineHeight = ''; // Resets to CSS rule (e.g., normal)
+        this.element.style.cursor = ''; // Resets to CSS rule (e.g., pointer)
+        this.element.style.userSelect = ''; // Resets to CSS rule (e.g., none)
+        this.element.style.webkitUserSelect = ''; // Resets to CSS rule (e.g., none)
+        // Note: width and height are intentionally NOT reset here,
+        // as they were just set by renderContent() based on the final KaTeX size.
 
-        // Ensure final position uses the center *before* edit mode started
-        if (hasValidCenter) {
-            this._updatePositionAndSize(currentCenterX, currentCenterY);
-             this._updateTransform(); // Reapply transform after positioning
-        } else {
-            // Fallback if center wasn't valid before edit
-             this._updatePositionAndSize(this.x + this.width / 2, this.y + this.height / 2);
-             this._updateTransform();
-        }
+        // Re-apply the final transform (rotation) if any
+        this._updateTransform();
 
-        return { textChanged };
+        return { textChanged }; // Return whether the text content changed
     }
 
     getCenter() {

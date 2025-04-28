@@ -103,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
       this.undoStack = [];
       this.redoStack = [];
 
+      this.lastActionWasTransform = false;
+
             // Utils needed by TextBox
             this.textBoxUtils = {
                 formatStringToMathDisplay,
@@ -157,44 +159,160 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nodeIds.size > 0 || textBoxIds.size > 0) { return this.getCombinedBoundingBox(nodeIds, textBoxIds); } return null;
     }
 
+    // Replace existing updateTransformHandles
     updateTransformHandles() {
-      const rotateHandle = this.rotateHandleIconElem; const scaleHandle = this.scaleHandleIconElem; const isAnySelectionActive = this.selectionLevel === 'component' && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0); const isWritingMode = !!this.activeTextBox;
-      if (isWritingMode || !isAnySelectionActive || this.isDrawing || this.isSelecting || this.selectionLevel === 'element') { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-      let refBoxWidth, refBoxHeight, centerForTransform, rotationForTransform;
-      if (this.isRotating || this.isScaling) {
-        if (!this.dragStartStates.length || !this.dragStartStates[0].startBBox || !this.dragStartStates[0].startCenter) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-        const startBBox = this.dragStartStates[0].startBBox; const startCenter = this.dragStartStates[0].startCenter; const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0;
-        centerForTransform = startCenter; rotationForTransform = startGroupRotation + (this.isRotating ? this.currentRotationAngle : 0);
-        const scaleX = this.currentScaleFactorX; const scaleY = this.currentScaleFactorY;
-        if (startBBox.width < 0 || startBBox.height < 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-        refBoxWidth = startBBox.width * Math.abs(scaleX); refBoxHeight = startBBox.height * Math.abs(scaleY);
-      } else {
-        const usePersistentState = this.initialBBox && this.initialBBox.width >= 0 && this.initialBBox.height >= 0 && this.scaleRotateCenter.x !== 0 && this.scaleRotateCenter.y !== 0;
-        const isSingleTextBoxSelected = this.selectedTextBoxes.size === 1 && this.activeComponentData.size === 0;
-        if (isSingleTextBoxSelected && !usePersistentState) {
-          const textBox = this.selectedTextBoxes.values().next().value; const corners = textBox.getRotatedCorners(); const rect = textBox.getDOMRect();
-          if (!corners || !rect || rect.width <= 0 || rect.height <= 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-          refBoxWidth = rect.width; refBoxHeight = rect.height; centerForTransform = corners.center; rotationForTransform = textBox.rotation ?? 0;
-          this.initialBBox = this.getCombinedBoundingBox(new Set(), new Set([textBox.id]));
-          if(this.initialBBox) { this.scaleRotateCenter = { x: this.initialBBox.centerX, y: this.initialBBox.centerY }; this.selectionRotationAngle = rotationForTransform; }
-          else { this.scaleRotateCenter = corners.center; this.selectionRotationAngle = rotationForTransform; this.initialBBox = {centerX: corners.center.x, centerY: corners.center.y, width: refBoxWidth, height: refBoxHeight, minX: corners.center.x - refBoxWidth/2, minY: corners.center.y - refBoxHeight/2, maxX: corners.center.x + refBoxWidth/2, maxY: corners.center.y + refBoxHeight/2 }; }
-        } else if (usePersistentState) {
-          refBoxWidth = this.initialBBox.width; refBoxHeight = this.initialBBox.height; centerForTransform = this.scaleRotateCenter; rotationForTransform = this.selectionRotationAngle;
-        } else {
-          const currentBBox = this.getSelectionBoundingBox();
-          if (!currentBBox || currentBBox.width < 0 || currentBBox.height < 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
-          refBoxWidth = currentBBox.width; refBoxHeight = currentBBox.height; centerForTransform = { x: currentBBox.centerX, y: currentBBox.centerY }; rotationForTransform = 0;
-          this.initialBBox = currentBBox; this.scaleRotateCenter = centerForTransform; this.selectionRotationAngle = rotationForTransform;
+        // *** NEW: Check if we just finished a transform and mouse is up ***
+        // If so, skip this update to prevent visual snap of handles
+        if (this.lastActionWasTransform && this.mouseDownButton === -1) {
+            console.log("updateTransformHandles: Deferring update immediately after transform release.");
+            // Reset the flag so the *next* call (e.g., on mouse move) works normally
+            this.lastActionWasTransform = false;
+            return; // Exit without updating handle positions visually
         }
-      }
-      const halfWidth = refBoxWidth / 2; const halfHeight = refBoxHeight / 2;
-      let relativeCorners = [ { x: -halfWidth, y: -halfHeight }, { x: halfWidth, y: -halfHeight }, { x: halfWidth, y: halfHeight }, { x: -halfWidth, y: halfHeight } ];
-      const visScaleX = this.isScaling ? this.currentScaleFactorX : 1; const visScaleY = this.isScaling ? this.currentScaleFactorY : 1;
-      if (visScaleX < 0) { relativeCorners = relativeCorners.map(p => ({ x: -p.x, y: p.y })); } if (visScaleY < 0) { relativeCorners = relativeCorners.map(p => ({ x: p.x, y: -p.y })); }
-      const visualCorners = { tl: rotatePoint({ x: centerForTransform.x + relativeCorners[0].x, y: centerForTransform.y + relativeCorners[0].y }, centerForTransform, rotationForTransform), tr: rotatePoint({ x: centerForTransform.x + relativeCorners[1].x, y: centerForTransform.y + relativeCorners[1].y }, centerForTransform, rotationForTransform), br: rotatePoint({ x: centerForTransform.x + relativeCorners[2].x, y: centerForTransform.y + relativeCorners[2].y }, centerForTransform, rotationForTransform), bl: rotatePoint({ x: centerForTransform.x + relativeCorners[3].x, y: centerForTransform.y + relativeCorners[3].y }, centerForTransform, rotationForTransform) };
-      const handleHalfSize = this.HANDLE_ICON_SIZE / 2;
-      const rotateHandleCenterX = visualCorners.tr.x; const rotateHandleCenterY = visualCorners.tr.y; rotateHandle.style.left = `${rotateHandleCenterX - handleHalfSize}px`; rotateHandle.style.top = `${rotateHandleCenterY - handleHalfSize}px`; rotateHandle.style.display = 'block';
-      const scaleHandleCenterX = visualCorners.br.x; const scaleHandleCenterY = visualCorners.br.y; scaleHandle.style.left = `${scaleHandleCenterX - handleHalfSize}px`; scaleHandle.style.top = `${scaleHandleCenterY - handleHalfSize}px`; scaleHandle.style.display = 'block';
+        // Reset flag if we proceed (e.g., mouse is down or last action wasn't transform)
+        // Important to reset here so subsequent idle mouse moves update correctly
+        this.lastActionWasTransform = false;
+
+
+        const rotateHandle = this.rotateHandleIconElem;
+        const scaleHandle = this.scaleHandleIconElem;
+
+        // Determine if handles should be visible
+        const isAnySelectionActive = this.selectionLevel === 'component' && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0);
+        const isWritingMode = !!this.activeTextBox; // True if editing text
+
+        // Hide handles if: editing text, no selection, drawing, selecting rect, or in element-level selection
+        if (isWritingMode || !isAnySelectionActive || this.isDrawing || this.isSelecting || this.selectionLevel === 'element') {
+            rotateHandle.style.display = 'none';
+            scaleHandle.style.display = 'none';
+            return;
+        }
+
+        let centerForTransform, rotationForTransform;
+        let visualCorners = null; // Will store {tl, tr, br, bl}
+
+        if (this.isRotating) {
+            // --- During Active Rotation ---
+            if (!this.dragStartStates.length || !this.dragStartStates[0].startBBox || !this.dragStartStates[0].startCenter) {
+                 console.warn("Cannot update handles during rotation: Missing drag start state.");
+                 rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+            }
+            const startBBox = this.dragStartStates[0].startBBox;
+            const startCenter = this.dragStartStates[0].startCenter;
+            const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0;
+            if (startBBox.width < 0 || startBBox.height < 0) {
+                 console.warn("Cannot update handles during rotation: Invalid start BBox dimensions.");
+                 rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+            }
+
+            centerForTransform = startCenter;
+            rotationForTransform = startGroupRotation + this.currentRotationAngle; // Current total rotation
+            const refBoxWidth = startBBox.width; // Dimensions don't change
+            const refBoxHeight = startBBox.height;
+            const halfWidth = refBoxWidth / 2; const halfHeight = refBoxHeight / 2;
+
+            // Calculate corners based on initial size but current rotation
+            const baseCorners = { tl: { x: -halfWidth, y: -halfHeight }, tr: { x:  halfWidth, y: -halfHeight }, br: { x:  halfWidth, y:  halfHeight }, bl: { x: -halfWidth, y:  halfHeight } };
+            visualCorners = {
+                tl: rotatePoint({ x: centerForTransform.x + baseCorners.tl.x, y: centerForTransform.y + baseCorners.tl.y }, centerForTransform, rotationForTransform),
+                tr: rotatePoint({ x: centerForTransform.x + baseCorners.tr.x, y: centerForTransform.y + baseCorners.tr.y }, centerForTransform, rotationForTransform),
+                br: rotatePoint({ x: centerForTransform.x + baseCorners.br.x, y: centerForTransform.y + baseCorners.br.y }, centerForTransform, rotationForTransform),
+                bl: rotatePoint({ x: centerForTransform.x + baseCorners.bl.x, y: centerForTransform.y + baseCorners.bl.y }, centerForTransform, rotationForTransform)
+            };
+
+        } else if (this.isScaling) {
+            // --- During Active Scaling ---
+            // Handles follow corners defined by the mouse relative to center/rotation
+             if (!this.dragStartStates.length || !this.dragStartStates[0].startCenter || this.dragStartStates[0].startGroupRotation === undefined) {
+                  console.warn("Cannot update handles during scaling: Missing drag start state.");
+                  rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+             }
+            const startCenter = this.dragStartStates[0].startCenter;
+            const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0;
+            centerForTransform = startCenter;
+            rotationForTransform = startGroupRotation; // Rotation fixed during scale
+
+            const currentMousePos = this.lastMousePos; // Get current mouse position
+
+            const mouseVecWorld = { x: currentMousePos.x - centerForTransform.x, y: currentMousePos.y - centerForTransform.y };
+             const cosA = Math.cos(-startGroupRotation); const sinA = Math.sin(-startGroupRotation);
+             const mouseVecLocal = { x: mouseVecWorld.x * cosA - mouseVecWorld.y * sinA, y: mouseVecWorld.x * sinA + mouseVecWorld.y * cosA };
+
+            // Define corners relative to center in local frame based on mouse
+             const localRelCorners = [ { x: -mouseVecLocal.x, y: -mouseVecLocal.y }, { x:  mouseVecLocal.x, y: -mouseVecLocal.y }, { x:  mouseVecLocal.x, y:  mouseVecLocal.y }, { x: -mouseVecLocal.x, y:  mouseVecLocal.y } ];
+
+             // Rotate corners back to world space
+             const cosR = Math.cos(startGroupRotation); const sinR = Math.sin(startGroupRotation);
+             visualCorners = {
+                 tl: { x: centerForTransform.x + (localRelCorners[0].x * cosR - localRelCorners[0].y * sinR), y: centerForTransform.y + (localRelCorners[0].x * sinR + localRelCorners[0].y * cosR) },
+                 tr: { x: centerForTransform.x + (localRelCorners[1].x * cosR - localRelCorners[1].y * sinR), y: centerForTransform.y + (localRelCorners[1].x * sinR + localRelCorners[1].y * cosR) },
+                 br: { x: centerForTransform.x + (localRelCorners[2].x * cosR - localRelCorners[2].y * sinR), y: centerForTransform.y + (localRelCorners[2].x * sinR + localRelCorners[2].y * cosR) },
+                 bl: { x: centerForTransform.x + (localRelCorners[3].x * cosR - localRelCorners[3].y * sinR), y: centerForTransform.y + (localRelCorners[3].x * sinR + localRelCorners[3].y * cosR) }
+            };
+
+        } else {
+            // --- Not actively rotating or scaling ---
+            // Use persistent state (calculated/updated in handleMouseUp or on selection)
+            const usePersistentState = this.initialBBox && this.scaleRotateCenter && this.initialBBox.width >= 0 && this.initialBBox.height >= 0 && typeof this.scaleRotateCenter.x === 'number' && typeof this.scaleRotateCenter.y === 'number';
+
+             if (usePersistentState) {
+                 centerForTransform = this.scaleRotateCenter;
+                 rotationForTransform = this.selectionRotationAngle ?? 0;
+                 const refBoxWidth = this.initialBBox.width; const refBoxHeight = this.initialBBox.height;
+                 if (refBoxWidth < 0 || refBoxHeight < 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
+                 const halfWidth = refBoxWidth / 2; const halfHeight = refBoxHeight / 2;
+                 // Calculate corners based on persistent state BBox dimensions and rotation
+                 const baseCorners = { tl: { x: -halfWidth, y: -halfHeight }, tr: { x: halfWidth, y: -halfHeight }, br: { x: halfWidth, y: halfHeight }, bl: { x: -halfWidth, y: halfHeight } };
+                 visualCorners = {
+                     tl: rotatePoint({ x: centerForTransform.x + baseCorners.tl.x, y: centerForTransform.y + baseCorners.tl.y }, centerForTransform, rotationForTransform),
+                     tr: rotatePoint({ x: centerForTransform.x + baseCorners.tr.x, y: centerForTransform.y + baseCorners.tr.y }, centerForTransform, rotationForTransform),
+                     br: rotatePoint({ x: centerForTransform.x + baseCorners.br.x, y: centerForTransform.y + baseCorners.br.y }, centerForTransform, rotationForTransform),
+                     bl: rotatePoint({ x: centerForTransform.x + baseCorners.bl.x, y: centerForTransform.y + baseCorners.bl.y }, centerForTransform, rotationForTransform)
+                 };
+             } else {
+                 // Try to calculate state if missing, otherwise hide handles
+                 this.updatePersistentStateFromSelection(); // Ensure state reflects current selection
+                  if (this.initialBBox && this.scaleRotateCenter) {
+                       // Recalculate corners based on newly calculated state
+                        centerForTransform = this.scaleRotateCenter; rotationForTransform = this.selectionRotationAngle ?? 0;
+                        const refBoxWidth = this.initialBBox.width; const refBoxHeight = this.initialBBox.height;
+                        if (refBoxWidth < 0 || refBoxHeight < 0) { rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return; }
+                        const halfWidth = refBoxWidth / 2; const halfHeight = refBoxHeight / 2;
+                        const baseCorners = { tl: { x: -halfWidth, y: -halfHeight }, tr: { x: halfWidth, y: -halfHeight }, br: { x: halfWidth, y: halfHeight }, bl: { x: -halfWidth, y: halfHeight } };
+                        visualCorners = { tl: rotatePoint({ x: centerForTransform.x + baseCorners.tl.x, y: centerForTransform.y + baseCorners.tl.y }, centerForTransform, rotationForTransform), tr: rotatePoint({ x: centerForTransform.x + baseCorners.tr.x, y: centerForTransform.y + baseCorners.tr.y }, centerForTransform, rotationForTransform), br: rotatePoint({ x: centerForTransform.x + baseCorners.br.x, y: centerForTransform.y + baseCorners.br.y }, centerForTransform, rotationForTransform), bl: rotatePoint({ x: centerForTransform.x + baseCorners.bl.x, y: centerForTransform.y + baseCorners.bl.y }, centerForTransform, rotationForTransform) };
+                  } else {
+                       // Still no valid state after trying to update
+                       console.warn("Cannot update handles: Persistent state invalid after update.");
+                       rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+                  }
+            }
+        } // End if isRotating/isScaling/else
+
+        // --- Position Handles ---
+        if (!visualCorners) { // Check if corners were successfully calculated
+            console.warn("Cannot position handles: visualCorners not calculated.");
+            rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+        }
+
+        // Ensure calculated corner coordinates are valid numbers before using them
+        if (isNaN(visualCorners.tr?.x) || isNaN(visualCorners.tr?.y) || isNaN(visualCorners.br?.x) || isNaN(visualCorners.br?.y)) {
+             console.warn("Cannot position handles: Invalid corner coordinates calculated.", visualCorners);
+             rotateHandle.style.display = 'none'; scaleHandle.style.display = 'none'; return;
+        }
+
+        const handleHalfSize = this.HANDLE_ICON_SIZE / 2; // Make sure this is defined in your class
+        // Place handles at the calculated visual TR and BR corners
+        const rotateHandleCenterX = visualCorners.tr.x;
+        const rotateHandleCenterY = visualCorners.tr.y;
+        rotateHandle.style.left = `${rotateHandleCenterX - handleHalfSize}px`;
+        rotateHandle.style.top = `${rotateHandleCenterY - handleHalfSize}px`;
+        rotateHandle.style.display = 'block';
+
+        const scaleHandleCenterX = visualCorners.br.x;
+        const scaleHandleCenterY = visualCorners.br.y;
+        scaleHandle.style.left = `${scaleHandleCenterX - handleHalfSize}px`;
+        scaleHandle.style.top = `${scaleHandleCenterY - handleHalfSize}px`;
+        scaleHandle.style.display = 'block';
     }
 
     updateCursorBasedOnContext() {
@@ -224,64 +342,64 @@ document.addEventListener('DOMContentLoaded', () => {
     drawRotatedRect(corners, color = 'blue', dash = [4, 4]) { if (!corners || !corners.tl || !corners.tr || !corners.br || !corners.bl) return; this.ctx.save(); this.ctx.strokeStyle = color; this.ctx.lineWidth = 1; if (dash && dash.length > 0) this.ctx.setLineDash(dash); else this.ctx.setLineDash([]); this.ctx.beginPath(); this.ctx.moveTo(corners.tl.x, corners.tl.y); this.ctx.lineTo(corners.tr.x, corners.tr.y); this.ctx.lineTo(corners.br.x, corners.br.y); this.ctx.lineTo(corners.bl.x, corners.bl.y); this.ctx.closePath(); this.ctx.stroke(); this.ctx.restore(); }
 
     redrawCanvas() {
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); const isWritingMode = !!this.activeTextBox;
-      this.graph.getAllEdges().forEach(edge => { const isHovered = !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && this.mouseOverEdgeId === edge.id && this.mouseDownButton === -1; this.drawEdge(edge, false, isHovered); });
-      this.graph.getAllNodes().forEach(node => { const isHovered = !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && this.mouseOverNodeId === node.id && this.mouseDownButton === -1; this.drawNodeHighlight(node, isHovered); });
-      const isAnyComponentSelectionActive = this.selectionLevel === 'component' && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0);
-      if (isAnyComponentSelectionActive && !isWritingMode) {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); const isWritingMode = !!this.activeTextBox;
+        this.graph.getAllEdges().forEach(edge => { const isHovered = !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && this.mouseOverEdgeId === edge.id && this.mouseDownButton === -1; this.drawEdge(edge, false, isHovered); });
+        this.graph.getAllNodes().forEach(node => { const isHovered = !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && this.mouseOverNodeId === node.id && this.mouseDownButton === -1; this.drawNodeHighlight(node, isHovered); });
+        const isAnyComponentSelectionActive = this.selectionLevel === 'component' && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0);
+        if (isAnyComponentSelectionActive && !isWritingMode) {
         let cornersToDraw = null; let dashStyle = [4, 4]; let colorStyle = 'blue';
         if (this.isScaling) {
-          if (this.dragStartStates.length > 0 && this.dragStartStates[0].startBBox && this.dragStartStates[0].startCenter) {
+            if (this.dragStartStates.length > 0 && this.dragStartStates[0].startBBox && this.dragStartStates[0].startCenter) {
             const startBBox = this.dragStartStates[0].startBBox; const centerToUse = this.dragStartStates[0].startCenter; const angleToDraw = this.dragStartStates[0].startGroupRotation ?? 0; const cursorPos = this.lastMousePos;
             if(startBBox.width >= 0 && startBBox.height >= 0) {
-              const mouseRel = { x: cursorPos.x - centerToUse.x, y: cursorPos.y - centerToUse.y };
-              const cosA = Math.cos(-angleToDraw); const sinA = Math.sin(-angleToDraw); const mouseRelLocal = { x: mouseRel.x * cosA - mouseRel.y * sinA, y: mouseRel.x * sinA + mouseRel.y * cosA };
-              const newHalfWidthLocal = mouseRelLocal.x; const newHalfHeightLocal = mouseRelLocal.y;
-              const local_TL = { x: -newHalfWidthLocal, y: -newHalfHeightLocal }; const local_TR = { x: newHalfWidthLocal, y: -newHalfHeightLocal }; const local_BR = { x: newHalfWidthLocal, y: newHalfHeightLocal }; const local_BL = { x: -newHalfWidthLocal, y: newHalfHeightLocal };
-              cornersToDraw = { tl: rotatePoint({ x: centerToUse.x + local_TL.x, y: centerToUse.y + local_TL.y }, centerToUse, angleToDraw), tr: rotatePoint({ x: centerToUse.x + local_TR.x, y: centerToUse.y + local_TR.y }, centerToUse, angleToDraw), br: rotatePoint({ x: centerToUse.x + local_BR.x, y: centerToUse.y + local_BR.y }, centerToUse, angleToDraw), bl: rotatePoint({ x: centerToUse.x + local_BL.x, y: centerToUse.y + local_BL.y }, centerToUse, angleToDraw) }; colorStyle = 'dodgerblue';
+                const mouseRel = { x: cursorPos.x - centerToUse.x, y: cursorPos.y - centerToUse.y };
+                const cosA = Math.cos(-angleToDraw); const sinA = Math.sin(-angleToDraw); const mouseRelLocal = { x: mouseRel.x * cosA - mouseRel.y * sinA, y: mouseRel.x * sinA + mouseRel.y * cosA };
+                const newHalfWidthLocal = mouseRelLocal.x; const newHalfHeightLocal = mouseRelLocal.y;
+                const local_TL = { x: -newHalfWidthLocal, y: -newHalfHeightLocal }; const local_TR = { x: newHalfWidthLocal, y: -newHalfHeightLocal }; const local_BR = { x: newHalfWidthLocal, y: newHalfHeightLocal }; const local_BL = { x: -newHalfWidthLocal, y: newHalfHeightLocal };
+                cornersToDraw = { tl: rotatePoint({ x: centerToUse.x + local_TL.x, y: centerToUse.y + local_TL.y }, centerToUse, angleToDraw), tr: rotatePoint({ x: centerToUse.x + local_TR.x, y: centerToUse.y + local_TR.y }, centerToUse, angleToDraw), br: rotatePoint({ x: centerToUse.x + local_BR.x, y: centerToUse.y + local_BR.y }, centerToUse, angleToDraw), bl: rotatePoint({ x: centerToUse.x + local_BL.x, y: centerToUse.y + local_BL.y }, centerToUse, angleToDraw) }; colorStyle = 'dodgerblue';
             }
-          }
+            }
         } else {
-          let boxToDraw = null; let angleToDraw = 0; let centerToUse = null; let visualScaleX = 1; let visualScaleY = 1;
-          if (this.isRotating) {
+            let boxToDraw = null; let angleToDraw = 0; let centerToUse = null; let visualScaleX = 1; let visualScaleY = 1;
+            if (this.isRotating) {
             if (this.dragStartStates.length > 0 && this.dragStartStates[0].startBBox && this.dragStartStates[0].startCenter) {
-              const startBBox = this.dragStartStates[0].startBBox; centerToUse = this.dragStartStates[0].startCenter; const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0; angleToDraw = startGroupRotation + this.currentRotationAngle;
-              visualScaleX = this.currentScaleFactorX; visualScaleY = this.currentScaleFactorY;
-              boxToDraw = { centerX: centerToUse.x, centerY: centerToUse.y, width: startBBox.width * Math.abs(visualScaleX), height: startBBox.height * Math.abs(visualScaleY) }; dashStyle = [4, 4]; colorStyle = 'dodgerblue';
+                const startBBox = this.dragStartStates[0].startBBox; centerToUse = this.dragStartStates[0].startCenter; const startGroupRotation = this.dragStartStates[0].startGroupRotation ?? 0; angleToDraw = startGroupRotation + this.currentRotationAngle;
+                visualScaleX = this.currentScaleFactorX; visualScaleY = this.currentScaleFactorY;
+                boxToDraw = { centerX: centerToUse.x, centerY: centerToUse.y, width: startBBox.width * Math.abs(visualScaleX), height: startBBox.height * Math.abs(visualScaleY) }; dashStyle = [4, 4]; colorStyle = 'dodgerblue';
             }
-          } else if (this.isDraggingNodes || this.isDraggingItems) {
+            } else if (this.isDraggingNodes || this.isDraggingItems) {
             const usePersistentState = this.initialBBox && this.initialBBox.width >= 0 && this.initialBBox.height >= 0 && this.scaleRotateCenter.x !== 0 && this.scaleRotateCenter.y !== 0;
             if (usePersistentState) { boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height }; centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle; dashStyle = [4, 4]; colorStyle = 'dodgerblue'; }
             else { const currentBBox = this.getSelectionBoundingBox(); if (currentBBox && currentBBox.width >= 0 && currentBBox.height >= 0) { boxToDraw = { ...currentBBox }; centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0; dashStyle = [4, 4]; colorStyle = 'dodgerblue'; } }
-          } else {
+            } else {
             const usePersistentState = this.initialBBox && this.initialBBox.width >= 0 && this.initialBBox.height >= 0 && this.scaleRotateCenter.x !== 0 && this.scaleRotateCenter.y !== 0;
             if (usePersistentState) { boxToDraw = { centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y, width: this.initialBBox.width, height: this.initialBBox.height }; centerToUse = this.scaleRotateCenter; angleToDraw = this.selectionRotationAngle; dashStyle = [4, 4]; colorStyle = 'blue'; }
             else { const currentBBox = this.getSelectionBoundingBox(); if (currentBBox && currentBBox.width >= 0 && currentBBox.height >= 0) { boxToDraw = { ...currentBBox }; centerToUse = { x: currentBBox.centerX, y: currentBBox.centerY }; angleToDraw = 0; dashStyle = [4, 4]; colorStyle = 'blue'; this.initialBBox = currentBBox; this.scaleRotateCenter = centerToUse; this.selectionRotationAngle = angleToDraw; } }
-          }
-          if (boxToDraw && centerToUse && boxToDraw.width >= 0 && boxToDraw.height >= 0) {
+            }
+            if (boxToDraw && centerToUse && boxToDraw.width >= 0 && boxToDraw.height >= 0) {
             const halfWidth = boxToDraw.width / 2; const halfHeight = boxToDraw.height / 2; let relativeCorners = [ { x: -halfWidth, y: -halfHeight }, { x: halfWidth, y: -halfHeight }, { x: halfWidth, y: halfHeight }, { x: -halfWidth, y: halfHeight } ];
             if (visualScaleX < 0) { relativeCorners = relativeCorners.map(p => ({ x: -p.x, y: p.y })); } if (visualScaleY < 0) { relativeCorners = relativeCorners.map(p => ({ x: p.x, y: -p.y })); }
             const rotatedCorners = relativeCorners.map(p => rotatePoint({ x: centerToUse.x + p.x, y: centerToUse.y + p.y }, centerToUse, angleToDraw)); cornersToDraw = { tl: rotatedCorners[0], tr: rotatedCorners[1], br: rotatedCorners[2], bl: rotatedCorners[3] };
-          }
+            }
         }
         if (cornersToDraw) { this.drawRotatedRect(cornersToDraw, colorStyle, dashStyle); }
-      } else if (this.selectionLevel === 'component' && !isWritingMode) {
+        } else if (this.selectionLevel === 'component' && !isWritingMode) {
         let hoverCorners = null; const targetElement = document.elementFromPoint(this.lastMousePos.x, this.lastMousePos.y); const isHoveringHandle = targetElement === this.rotateHandleIconElem || targetElement === this.scaleHandleIconElem;
         if (!isHoveringHandle && !this.isDrawing && !this.isSelecting && !this.isRotating && !this.isScaling && this.mouseDownButton === -1) {
-          if (this.mouseOverNodeId || this.mouseOverEdgeId) { const hoveredElementId = this.mouseOverNodeId || this.mouseOverEdgeId; const hoveredElementType = this.mouseOverNodeId ? 'node' : 'edge'; const compId = this.getComponentIdForElement(hoveredElementId, hoveredElementType); if (compId) { const { componentNodes } = this.findConnectedComponent(hoveredElementId, hoveredElementType); const hoverBBox = this.getCombinedBoundingBox(componentNodes, []); if (hoverBBox && hoverBBox.width >= 0 && hoverBBox.height >= 0) { const hw=hoverBBox.width/2; const hh=hoverBBox.height/2; const hc= {x:hoverBBox.centerX, y:hoverBBox.centerY}; hoverCorners = { tl: { x: hc.x-hw, y: hc.y-hh }, tr: { x: hc.x+hw, y: hc.y-hh }, br: { x: hc.x+hw, y: hc.y+hh }, bl: { x: hc.x-hw, y: hc.y+hh } }; } } }
-          else if (this.mouseOverBox) { // Use the TextBox instance
-                       hoverCorners = this.mouseOverBox.getRotatedCorners();
+            if (this.mouseOverNodeId || this.mouseOverEdgeId) { const hoveredElementId = this.mouseOverNodeId || this.mouseOverEdgeId; const hoveredElementType = this.mouseOverNodeId ? 'node' : 'edge'; const compId = this.getComponentIdForElement(hoveredElementId, hoveredElementType); if (compId) { const { componentNodes } = this.findConnectedComponent(hoveredElementId, hoveredElementType); const hoverBBox = this.getCombinedBoundingBox(componentNodes, []); if (hoverBBox && hoverBBox.width >= 0 && hoverBBox.height >= 0) { const hw=hoverBBox.width/2; const hh=hoverBBox.height/2; const hc= {x:hoverBBox.centerX, y:hoverBBox.centerY}; hoverCorners = { tl: { x: hc.x-hw, y: hc.y-hh }, tr: { x: hc.x+hw, y: hc.y-hh }, br: { x: hc.x+hw, y: hc.y+hh }, bl: { x: hc.x-hw, y: hc.y+hh } }; } } }
+            else if (this.mouseOverBox && !isWritingMode) { // Explicitly check writing mode here too
+                        hoverCorners = this.mouseOverBox.getRotatedCorners();
                     }
-          if (hoverCorners) { this.drawRotatedRect(hoverCorners, '#aaa', [3, 3]); }
+            if (hoverCorners && !isWritingMode) { this.drawRotatedRect(hoverCorners, '#aaa', [3, 3]); } // Check again before drawing
         }
-      }
-      if (this.isAltDown && !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1 && this.lastMousePos && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0)) {
+        }
+        if (this.isAltDown && !this.isDrawing && !this.isDraggingNodes && !this.isDraggingItems && !this.isRotating && !this.isScaling && this.mouseDownButton === -1 && this.lastMousePos && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0)) {
         const previewEndPoint = this.snapTargetNode ? this.snapTargetNode : this.lastMousePos;
         this.ctx.save(); this.ctx.lineWidth = this.currentLineWidth; this.ctx.setLineDash([4, 4]); this.ctx.strokeStyle = this.snapTargetNode ? 'red' : this.currentColor;
         if (this.isAltDrawing && this.altDrawingSourceNodeId) { const sourceNode = this.graph.getNode(this.altDrawingSourceNodeId); if (sourceNode) { this.ctx.beginPath(); this.ctx.moveTo(sourceNode.x, sourceNode.y); this.ctx.lineTo(previewEndPoint.x, previewEndPoint.y); this.ctx.stroke(); } }
         else if (this.altPreviewSourceNodeIds.size > 0) { this.altPreviewSourceNodeIds.forEach(nid => { const node = this.graph.getNode(nid); if(node){ this.ctx.beginPath(); this.ctx.moveTo(node.x, node.y); this.ctx.lineTo(previewEndPoint.x, previewEndPoint.y); this.ctx.stroke(); } }); }
         this.ctx.restore();
-      }
+        }
     }
 
     updateNodeHandles() { this.nodeHandlesContainer.innerHTML = ''; this.snapIndicatorElem.style.display = 'none'; const nodesToShowHandles = new Set(); if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId) { const compData = this.activeComponentData.get(this.elementSelectionActiveForComponentId); if (compData) { compData.componentNodes.forEach(nodeId => nodesToShowHandles.add(nodeId)); } } nodesToShowHandles.forEach(nodeId => { const node = this.graph.getNode(nodeId); if (!node) return; const handle = document.createElement('div'); handle.className = 'node-handle'; handle.dataset.nodeId = nodeId; handle.style.left = `${node.x}px`; handle.style.top = `${node.y}px`; handle.style.display = 'block'; const componentId = this.getComponentIdForElement(nodeId, 'node'); if (this.selectionLevel === 'element' && this.elementSelectionActiveForComponentId === componentId) { if (this.selectedNodes.has(nodeId)) { handle.classList.add('element-selected'); } else { handle.classList.add('element-focus-component'); } } else { handle.style.display = 'none'; } handle.addEventListener('mousedown', this.handleNodeMouseDown.bind(this)); this.nodeHandlesContainer.appendChild(handle); }); if (this.isAltDown && (this.isAltDrawing || this.altPreviewSourceNodeIds.size > 0) && this.snapTargetNode) { this.snapIndicatorElem.style.left = `${this.snapTargetNode.x}px`; this.snapIndicatorElem.style.top = `${this.snapTargetNode.y}px`; this.snapIndicatorElem.style.display = 'block'; } }
@@ -586,6 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     handleMouseDown(event) {
+        this.lastActionWasTransform = false;
         const target = event.target;
         if (target.closest('#toolbar')) return;
 
@@ -1169,235 +1288,237 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    handleMouseUp(event) {
-        const releasedButton = event.button;
-        const screenX = event.clientX;
-        const screenY = event.clientY;
-        const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD;
-        const targetElement = event.target;
-        const targetTextBoxElement = targetElement.closest('.textBox');
-        const targetTextBox = targetTextBoxElement ? this.textBoxRegistry.get(targetTextBoxElement.dataset.id) : null;
+// Replace existing handleMouseUp
+handleMouseUp(event) {
+    const releasedButton = event.button;
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+    const dragOccurred = Math.abs(screenX - this.dragStartMousePos.x) > this.DRAG_THRESHOLD || Math.abs(screenY - this.dragStartMousePos.y) > this.DRAG_THRESHOLD;
 
-        const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand';
-        const wasDraggingNodes = this.isDraggingNodes;
-        const wasDraggingItems = this.isDraggingItems;
-        const wasRotating = this.isRotating;
-        const wasScaling = this.isScaling;
-        const wasSelecting = this.isSelecting;
-        const clickTargetInfo = this.clickedElementInfo;
-        const finalDeltaAngle = this.currentRotationAngle;
-        const finalScaleFactorX = this.currentScaleFactorX;
-        const finalScaleFactorY = this.currentScaleFactorY;
-        let startPersistentStateForHistory = null;
+    // Store state *before* resetting flags
+    const wasDrawingFreehand = this.isDrawing && this.drawingMode === 'freehand';
+    const wasDraggingNodes = this.isDraggingNodes;
+    const wasDraggingItems = this.isDraggingItems;
+    const wasRotating = this.isRotating;
+    const wasScaling = this.isScaling;
+    const wasSelecting = this.isSelecting;
+    const wasPotentialRightClick = this.potentialRightClick;
 
-        if ((wasRotating || wasScaling || wasDraggingNodes || wasDraggingItems) && this.dragStartStates.length > 0) {
-            const firstState = this.dragStartStates[0];
-            if(firstState.startCenter && firstState.startBBox){
-                startPersistentStateForHistory = { angle: firstState.startGroupRotation ?? 0, center: { ...firstState.startCenter }, box: { ...firstState.startBBox } };
-            } else {
-                startPersistentStateForHistory = { angle: this.selectionRotationAngle, center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : null, box: this.initialBBox ? { ...this.initialBBox } : null };
-                console.warn("Using fallback persistent state for history in mouseup.");
-            }
-        }
+    // Capture final transform values for history/state update
+    const finalTargetAngle = this.currentDragTargetAngle; // Final absolute angle after rotation
+    const finalScaleFactorX = this.currentScaleFactorX; // Final scale factors if wasScaling
+    const finalScaleFactorY = this.currentScaleFactorY; // Final scale factors if wasScaling
+    const startStatesForHistory = [...this.dragStartStates]; // Copy for history record
 
-        this.potentialNodeHandleClick = false;
-        this.potentialGraphElementClick = false;
-        this.potentialTransformHandleClick = null;
+    let stateToPersistAfterTransform = null; // Stores { center, angle, bbox } calculated from transform params
+    let updatePersistentStateAction = null; // Signal for move operations ('recalculate_bbox')
+    this.lastActionWasTransform = false; // Reset flag initially for this mouseup
 
-        if (releasedButton === 2 && wasSelecting) {
-            event.preventDefault();
-            const wasSelectingRect = !this.potentialRightClick;
-            let rectBounds = null;
-            if (wasSelectingRect && this.selectionRectElem.style.display !== 'none') {
-                rectBounds = this.selectionRectElem.getBoundingClientRect();
-            }
-            this.selectionRectElem.style.display = 'none';
-            this.isSelecting = false;
-            this.potentialRightClick = false;
-            if (wasSelectingRect && rectBounds && rectBounds.width > 0 && rectBounds.height > 0) {
-                let newlySelectedTextBoxesInRect = new Set();
-                let newlySelectedComponentsInRect = new Map();
-                this.textBoxRegistry.forEach(box => {
-                    const b = box.getDOMRect();
-                    if (b) {
-                        const intersects = b.left < rectBounds.right && b.right > rectBounds.left && b.top < rectBounds.bottom && b.bottom > rectBounds.top;
-                        if (intersects) { newlySelectedTextBoxesInRect.add(box); }
-                    }
-                });
-                this.selectionLevel = 'component';
-                this.elementSelectionActiveForComponentId = null;
-                this.selectedNodes.clear();
-                this.selectedEdges.clear();
-                const processedNodesRect = new Set();
-                this.graph.getAllNodes().forEach(node => {
-                    const nodeInBounds = node.x >= rectBounds.left && node.x <= rectBounds.right && node.y >= rectBounds.top && node.y <= rectBounds.bottom;
-                    if (nodeInBounds && !processedNodesRect.has(node.id)) {
-                        const { componentNodes, componentEdges, representativeId } = this.findConnectedComponent(node.id, 'node');
-                        if (representativeId && (componentNodes.size > 0 || componentEdges.size > 0)) {
-                            if (!newlySelectedComponentsInRect.has(representativeId)) { newlySelectedComponentsInRect.set(representativeId, { componentNodes, componentEdges }); }
-                            componentNodes.forEach(nid => processedNodesRect.add(nid));
-                        }
-                    }
-                });
-                const previouslySelectedTextBoxes = new Set(this.selectedTextBoxes);
-                const previouslyActiveComponentData = new Map(this.activeComponentData);
-                let finalSelectedTextBoxes = new Set(previouslySelectedTextBoxes);
-                let finalActiveComponentData = new Map(previouslyActiveComponentData);
-                if (this.isCtrlDown) {
-                    newlySelectedTextBoxesInRect.forEach(box => { if (previouslySelectedTextBoxes.has(box)) finalSelectedTextBoxes.delete(box); else finalSelectedTextBoxes.add(box); });
-                    newlySelectedComponentsInRect.forEach((compData, compId) => { if (previouslyActiveComponentData.has(compId)) finalActiveComponentData.delete(compId); else finalActiveComponentData.set(compId, compData); });
-                } else if (this.isShiftDown) {
-                    newlySelectedTextBoxesInRect.forEach(box => finalSelectedTextBoxes.add(box));
-                    newlySelectedComponentsInRect.forEach((compData, compId) => finalActiveComponentData.set(compId, compData));
-                } else {
-                    finalSelectedTextBoxes = newlySelectedTextBoxesInRect;
-                    finalActiveComponentData = newlySelectedComponentsInRect;
+    // --- Finalize Actions Based on State ---
+
+    if (releasedButton === 2 && wasSelecting) {
+        // --- Handle Right Click (Rect Select / Context Menu) ---
+         event.preventDefault();
+         this.selectionRectElem.style.display = 'none';
+         this.isSelecting = false; this.potentialRightClick = false; // Reset flags
+         if (wasPotentialRightClick && !dragOccurred) {
+             console.log("Context Menu Trigger");
+             // Add your context menu display logic here
+         } else if (!wasPotentialRightClick && dragOccurred) {
+             const rectBounds = this.selectionRectElem.getBoundingClientRect();
+             if (rectBounds && rectBounds.width > 0 && rectBounds.height > 0) {
+                  // Call the new method to finalize selection
+                  this.finalizeRectSelection(rectBounds);
+             }
+         }
+         this.mouseDownButton = -1; // Reset button state
+
+    } else if (releasedButton === 0) {
+        // --- Handle Left Click Release ---
+
+        if (wasDrawingFreehand) {
+            this.finalizeCurrentDrawing(); // Handles history and state reset internally
+        }
+        else if ((wasRotating || wasScaling) && dragOccurred && startStatesForHistory.length > 0) {
+             // --- Finalize Rotation or Scale ---
+             const firstState = startStatesForHistory[0];
+             const startCenter = firstState.startCenter ? { ...firstState.startCenter } : null;
+             const startBBox = firstState.startBBox ? { ...firstState.startBBox } : null;
+             const startAngle = firstState.startGroupRotation ?? 0;
+
+             if (!startCenter || !startBBox || startBBox.width < 0 || startBBox.height < 0) {
+                 console.error("Cannot finalize transform: Invalid start state.");
+                 this.resetPersistentTransformState(); // Reset state on error
+             } else {
+                 let historyEntry = null;
+                 let finalAngle = startAngle;
+                 let transformApplied = false;
+                 let finalCalcWidth = startBBox.width;
+                 let finalCalcHeight = startBBox.height;
+
+                 // --- Finalize elements and create history entry ---
+                 if (wasRotating) {
+                      // --- Finalize Rotation ---
+                      historyEntry = { type: 'transform_items', transformType: 'rotate', items: [], startAngle: startAngle, startCenter: startCenter, startBBox: startBBox, endAngle: finalTargetAngle };
+                      startStatesForHistory.forEach(itemState => {
+                          let endX, endY, endRotation; let moved = false;
+                          const startRotation = itemState.startRotation ?? 0;
+                          if (itemState.type === 'node') {
+                              const node = this.graph.getNode(itemState.id);
+                              if(node) {
+                                  endX = node.x; endY = node.y; endRotation = 0;
+                                  moved = Math.abs(endX - itemState.startX) > 0.1 || Math.abs(endY - itemState.startY) > 0.1;
+                              }
+                          } else if (itemState.type === 'text') {
+                              const box = this.textBoxRegistry.get(itemState.id);
+                              if(box) {
+                                  endX = box.x; endY = box.y; endRotation = box.rotation;
+                                  moved = Math.abs(endX - itemState.startX) > 0.1 || Math.abs(endY - itemState.startY) > 0.1 || Math.abs(endRotation - startRotation) > 0.001;
+                              }
+                          }
+                          if (moved && endX !== undefined && endY !== undefined && endRotation !== undefined) {
+                               historyEntry.items.push({
+                                    id: itemState.id, type: itemState.type,
+                                    startX: itemState.startX, startY: itemState.startY, startRotation: startRotation,
+                                    endX: endX, endY: endY, endRotation: endRotation
+                                });
+                                transformApplied = true;
+                          }
+                      });
+                      finalAngle = finalTargetAngle; // Final angle after rotation
+                      finalCalcWidth = startBBox.width; // Width/height don't change on rotate
+                      finalCalcHeight = startBBox.height;
+                      this.lastActionWasTransform = true; // Set flag
+                 } else { // wasScaling
+                      // --- Finalize Scaling ---
+                      // Finalize scale on text boxes FIRST (updates their internal state/size)
+                      startStatesForHistory.forEach(itemState => { if (itemState.type === 'text') this.textBoxRegistry.get(itemState.id)?.finalizeScale(); });
+                      // Calculate history entry based on final states
+                      historyEntry = { type: 'transform_items', transformType: 'scale', items: [], startAngle: startAngle, startCenter: startCenter, startBBox: startBBox, endScaleX: finalScaleFactorX, endScaleY: finalScaleFactorY };
+                      startStatesForHistory.forEach(itemState => {
+                           let endState = null; let moved = false;
+                           const startRotation = itemState.startRotation ?? 0; const startFontSize = itemState.startFontSize ?? 0; const startWidth = itemState.startWidth ?? 0; const startHeight = itemState.startHeight ?? 0;
+                           if (itemState.type === 'node') {
+                               const node = this.graph.getNode(itemState.id);
+                               if (node) { endState = { endX: node.x, endY: node.y }; moved = Math.abs(endState.endX - itemState.startX) > 0.1 || Math.abs(endState.endY - itemState.startY) > 0.1; }
+                           } else if (itemState.type === 'text') {
+                               const box = this.textBoxRegistry.get(itemState.id);
+                               if (box) {
+                                   const finalBoxData = box.getDataForHistory(); // Get state AFTER finalizeScale
+                                   endState = { endX: finalBoxData.x, endY: finalBoxData.y, endWidth: finalBoxData.width, endHeight: finalBoxData.height, endRotation: finalBoxData.rotation, endFontSize: parseFloat(finalBoxData.fontSize) };
+                                   moved = Math.abs(endState.endX - itemState.startX) > 0.1 || Math.abs(endState.endY - itemState.startY) > 0.1 || Math.abs(endState.endRotation - startRotation) > 0.001 || Math.abs(endState.endFontSize - startFontSize) > 0.1 || Math.abs(endState.endWidth - startWidth) > 0.1 || Math.abs(endState.endHeight - startHeight) > 0.1;
+                               }
+                           }
+                           if (moved && endState) {
+                                historyEntry.items.push({
+                                    id: itemState.id, type: itemState.type,
+                                    startX: itemState.startX, startY: itemState.startY, startWidth: startWidth, startHeight: startHeight, startRotation: startRotation, startFontSize: startFontSize,
+                                    endX: endState.endX, endY: endState.endY, endWidth: endState.endWidth, endHeight: endState.endHeight, endRotation: endState.endRotation, endFontSize: endState.endFontSize
+                                });
+                                transformApplied = true;
+                           }
+                      });
+                       finalAngle = startAngle; // Angle unchanged
+                       // Calculate final dimensions based *only* on start size and final scale factors
+                       finalCalcWidth = startBBox.width * Math.abs(finalScaleFactorX);
+                       finalCalcHeight = startBBox.height * Math.abs(finalScaleFactorY);
+                       this.lastActionWasTransform = true; // Set flag
+                 }
+                 // Add history if needed
+                 if (transformApplied) { this.addHistory(historyEntry); }
+
+                 // --- Calculate state to persist based DIRECTLY on transform parameters ---
+                 stateToPersistAfterTransform = {
+                     center: startCenter, // Center relative to start doesn't change
+                     angle: finalAngle,   // Store the final calculated angle
+                     bbox: {             // Calculate final bbox based on start center & calculated final dimensions
+                         minX: startCenter.x - finalCalcWidth / 2, minY: startCenter.y - finalCalcHeight / 2,
+                         maxX: startCenter.x + finalCalcWidth / 2, maxY: startCenter.y + finalCalcHeight / 2,
+                         centerX: startCenter.x, centerY: startCenter.y,
+                         width: Math.max(0, finalCalcWidth),   // Ensure non-negative
+                         height: Math.max(0, finalCalcHeight) // Ensure non-negative
+                     }
+                 };
+             } // end if valid start state
+
+        } else if (wasDraggingNodes && dragOccurred) {
+             // --- Finalize Node Drag ---
+             const moves = []; startStatesForHistory.forEach(itemState => { if (itemState.type === 'node') { const node = this.graph.getNode(itemState.id); if (node && (Math.abs(node.x - itemState.startX) > 0.1 || Math.abs(node.y - itemState.startY) > 0.1)) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: node.x, endY: node.y }); } } });
+             if (moves.length > 0) { this.addHistory({ type: 'move_nodes', moves: moves }); }
+             updatePersistentStateAction = 'recalculate_bbox'; // Recalc needed after move
+
+        } else if (wasDraggingItems && dragOccurred) {
+             // --- Finalize Text Box Drag ---
+             this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto';
+             const moves = []; startStatesForHistory.forEach(itemState => { if (itemState.type === 'text') { const box = this.textBoxRegistry.get(itemState.id); if (box && (Math.abs(box.x - itemState.startX) > 0.1 || Math.abs(box.y - itemState.startY) > 0.1)) { const d = box.getDataForHistory(); moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, startRotation: itemState.startRotation, startFontSize: itemState.startFontSize, startWidth: itemState.startWidth, startHeight: itemState.startHeight, endX: d.x, endY: d.y, endRotation: d.rotation, endFontSize: parseFloat(d.fontSize), endWidth: d.width, endHeight: d.height }); } } });
+             if (moves.length > 0) { this.addHistory({ type: 'move_text', moves: moves }); }
+             updatePersistentStateAction = 'recalculate_bbox'; // Recalc needed after move
+
+        } else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
+             // --- Handle Simple Left Click ---
+            if (this.potentialGraphElementClick && this.clickedElementInfo) {
+                 // Handle element click selection logic (already done in mousedown for most cases)
+                 // Double check if state needs update based on click
+            } else if (this.potentialNodeHandleClick && this.clickedElementInfo) {
+                 // Handle node handle click selection logic (already done in mousedown for most cases)
+            } else if (this.clickedElementInfo && this.clickedElementInfo.type === 'text' && !this.isCtrlDown && !this.isShiftDown) {
+                const clickedBox = this.textBoxRegistry.get(this.clickedElementInfo.id);
+                // If clicking on an already selected text box (and it's the only thing selected), prepare for potential double-click/edit activation
+                if (clickedBox && this.selectedTextBoxes.has(clickedBox) && this.selectedTextBoxes.size === 1 && this.activeComponentData.size === 0) {
+                    // No immediate action needed, handled by double-click or other events
                 }
-                this.selectedTextBoxes.forEach(box => box.element?.classList.remove('selected'));
-                finalSelectedTextBoxes.forEach(box => box.element?.classList.add('selected'));
-                this.selectedTextBoxes = finalSelectedTextBoxes;
-                this.activeComponentData = finalActiveComponentData;
-                this.resetPersistentTransformState();
-                this.redrawCanvas();
-                this.updateNodeHandles();
-                this.updateTransformHandles();
+            } else if (!this.clickedElementInfo && !this.potentialTransformHandleClick && !this.isCtrlDown && !this.isShiftDown) {
+                 // Clicked on empty canvas, deselect if anything was selected
+                 // This logic is also handled in mousedown, but check here as well
+                 // Note: deselectAll() handles state updates internally
+                 if (this.selectedTextBoxes.size > 0 || this.activeComponentData.size > 0) {
+                    this.deselectAll();
+                 }
             }
-        } else if (releasedButton === 0) {
-            if (wasDrawingFreehand) { this.finalizeCurrentDrawing(); }
-            else if (wasRotating && startPersistentStateForHistory?.center) {
-                const transformHistory = { type: 'transform_items', transformType: 'rotate', items: [], startAngle: startPersistentStateForHistory.angle, startCenter: { ...startPersistentStateForHistory.center }, startBBox: startPersistentStateForHistory.box ? { ...startPersistentStateForHistory.box } : null, endAngle: this.currentDragTargetAngle };
-                let transformApplied = false;
-                const rotationCenter = startPersistentStateForHistory.center;
-                this.dragStartStates.forEach(itemState => {
-                    let startX_orig = itemState.startX, startY_orig = itemState.startY, startRotation_orig = itemState.startRotation ?? 0;
-                    let startCenterX, startCenterY;
-                    if (itemState.type === 'node') { startCenterX = startX_orig; startCenterY = startY_orig; }
-                    else if (itemState.type === 'text') { startCenterX = itemState.startCenterX; startCenterY = itemState.startCenterY; }
-                    else { return; }
-                    const startRelCenterX = startCenterX - rotationCenter.x; const startRelCenterY = startCenterY - rotationCenter.y;
-                    const cosDelta = Math.cos(finalDeltaAngle); const sinDelta = Math.sin(finalDeltaAngle);
-                    const rotatedRelX = startRelCenterX * cosDelta - startRelCenterY * sinDelta; const rotatedRelY = startRelCenterX * sinDelta + startRelCenterY * cosDelta;
-                    const endCenterX = rotationCenter.x + rotatedRelX; const endCenterY = rotationCenter.y + rotatedRelY;
-                    const endRotation = startRotation_orig + finalDeltaAngle;
-                    let endX, endY;
-                    if(itemState.type === 'node'){ endX = endCenterX; endY = endCenterY; }
-                    else { endX = endCenterX - (itemState.startWidth / 2); endY = endCenterY - (itemState.startHeight / 2); }
+        }
+        // Reset button state for left click case
+        this.mouseDownButton = -1;
+    } // End Left/Right Button Check
 
-                    let moved = false;
-                    if (itemState.type === 'node') { moved = Math.abs(endX - startX_orig) > 0.1 || Math.abs(endY - startY_orig) > 0.1; }
-                    else { moved = Math.abs(endX - startX_orig) > 0.1 || Math.abs(endY - startY_orig) > 0.1 || Math.abs(endRotation - startRotation_orig) > 0.01; }
 
-                    if (moved) {
-                        transformHistory.items.push({ id: itemState.id, type: itemState.type, startX: startX_orig, startY: startY_orig, endX: endX, endY: endY, startRotation: startRotation_orig, endRotation: endRotation });
-                        transformApplied = true;
-                    }
-                });
-                if (transformApplied) { this.addHistory(transformHistory); }
-                this.selectionRotationAngle = this.currentDragTargetAngle;
-                this.isRotating = false;
-                this.updateTransformHandles(); // Update handles based on final rotation
+    // --- State Reset (Flags, temp values) ---
+    this.isRotating = false; this.isScaling = false; this.isDraggingNodes = false; this.isDraggingItems = false;
+    if (releasedButton !== 2) { this.isSelecting = false; this.potentialRightClick = false; } // Only reset selection flags if it wasn't the end of a right-drag selection action
+    this.currentRotationAngle = 0; this.currentScaleFactorX = 1; this.currentScaleFactorY = 1; this.currentDragTargetAngle = 0; // Reset angle
+    this.dragStartStates = []; this.snapTargetNode = null; this.potentialNodeHandleClick = false; this.potentialGraphElementClick = false; this.potentialTransformHandleClick = null; this.potentialDragTarget = null; this.clickedElementInfo = null;
+    // Don't reset this.lastActionWasTransform here, it's needed by updateTransformHandles check
+    if (this.isAltDrawing && !this.isAltDown) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; }
+    if (!this.isAltDown) { this.altPreviewSourceNodeIds.clear(); }
 
-            } else if (wasScaling && startPersistentStateForHistory?.center && startPersistentStateForHistory?.box) {
-                const transformHistory = { type: 'transform_items', transformType: 'scale', items: [], startAngle: startPersistentStateForHistory.angle, startCenter: { ...startPersistentStateForHistory.center }, startBBox: { ...startPersistentStateForHistory.box }, endScaleX: finalScaleFactorX, endScaleY: finalScaleFactorY };
-                let transformApplied = false;
 
-                this.dragStartStates.forEach(itemState => {
-                    if (itemState.type === 'text') {
-                        const textBox = this.textBoxRegistry.get(itemState.id);
-                        if (textBox) { textBox.finalizeScale(); }
-                    }
-                });
-
-                this.dragStartStates.forEach(itemState => {
-                    let startState = { ...itemState };
-                    let endState = null; let moved = false;
-                    if (itemState.type === 'node') {
-                        const node = this.graph.getNode(itemState.id);
-                        if (node) { endState = { endX: node.x, endY: node.y }; moved = Math.abs(endState.endX - startState.startX) > 0.1 || Math.abs(endState.endY - startState.startY) > 0.1; }
-                    } else if (itemState.type === 'text') {
-                        const textBox = this.textBoxRegistry.get(itemState.id);
-                        if (textBox) {
-                            const finalBoxData = textBox.getDataForHistory();
-                            endState = { endX: finalBoxData.x, endY: finalBoxData.y, endWidth: finalBoxData.width, endHeight: finalBoxData.height, endRotation: finalBoxData.rotation, endFontSize: parseFloat(finalBoxData.fontSize) };
-                            moved = Math.abs(endState.endX - startState.startX) > 0.1 || Math.abs(endState.endY - startState.startY) > 0.1 || Math.abs(endState.endRotation - (startState.startRotation ?? 0)) > 0.01 || Math.abs(endState.endFontSize - (startState.startFontSize ?? 0)) > 0.1 || Math.abs(endState.endWidth - startState.startWidth) > 0.1 || Math.abs(endState.endHeight - startState.startHeight) > 0.1;
-                        }
-                    }
-                    if (moved && endState) {
-                        transformHistory.items.push({
-                            id: startState.id, type: startState.type,
-                            startX: startState.startX, startY: startState.startY, startWidth: startState.startWidth, startHeight: startState.startHeight, startRotation: startState.startRotation ?? 0, startFontSize: startState.startFontSize,
-                            endX: endState.endX, endY: endState.endY, endWidth: endState.endWidth, endHeight: endState.endHeight, endRotation: endState.endRotation, endFontSize: endState.endFontSize,
-                        });
-                        transformApplied = true;
-                    }
-                });
-
-                if (transformApplied) { this.addHistory(transformHistory); }
-                this.isScaling = false;
-                this.updateTransformHandles(); // Recalculate BBox based on final states
-
-            } else if (wasDraggingNodes) {
-                const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y;
-                const moves = [];
-                this.dragStartStates.forEach(itemState => {
-                    if (itemState.type === 'node') {
-                        const node = this.graph.getNode(itemState.id);
-                        if (node) { const finalX = node.x; const finalY = node.y; if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) { moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY }); } }
-                    }
-                });
-                if (moves.length > 0) { this.addHistory({ type: 'move_nodes', moves: moves }); }
-                this.isDraggingNodes = false;
-                this.updateTransformHandles(); // Update BBox after drag
-
-            } else if (wasDraggingItems) {
-                this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto';
-                const dx = screenX - this.dragStartMousePos.x; const dy = screenY - this.dragStartMousePos.y;
-                const moves = [];
-                this.dragStartStates.forEach(itemState => {
-                    if (itemState.type === 'text') {
-                        const box = this.textBoxRegistry.get(itemState.id);
-                        if (box) {
-                            const finalX = box.x; const finalY = box.y;
-                            if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
-                                moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, endX: finalX, endY: finalY, startRotation: itemState.startRotation, endRotation: box.rotation, startFontSize: itemState.startFontSize, endFontSize: parseFloat(box.fontSize) });
-                            }
-                        }
-                    }
-                });
-                if (moves.length > 0) { this.addHistory({ type: 'move_text', moves: moves }); }
-                this.isDraggingItems = false;
-                this.updateTransformHandles(); // Update BBox after drag
-
-            } else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown && releasedButton === 0) {
-                if (targetTextBox && clickTargetInfo && clickTargetInfo.type === 'text' && clickTargetInfo.id === targetTextBox.id) {
-                    // Simple click on text box handled by double click
-                }
-            }
-        }
-
-        this.mouseDownButton = -1;
-        this.isRotating = false;
-        this.isScaling = false;
-        this.isDraggingNodes = false;
-        this.isDraggingItems = false;
-        this.isSelecting = false;
-        this.dragStartStates = [];
-        this.snapTargetNode = null;
-        this.potentialDragTarget = null;
-        this.clickedElementInfo = null;
-        this.potentialRightClick = false;
-        this.currentRotationAngle = 0;
-        this.currentScaleFactorX = 1;
-        this.currentScaleFactorY = 1;
-        this.potentialTransformHandleClick = null;
-
-        if (this.isAltDrawing && !this.isAltDown) { this.isAltDrawing = false; this.altDrawingSourceNodeId = null; }
-
-        this.updateCursorBasedOnContext();
-        this.redrawCanvas();
-        this.updateNodeHandles();
-        this.updateTransformHandles();
+    // --- Apply Persistent State Changes ---
+    // Must happen *before* final UI updates that rely on this state
+    if (updatePersistentStateAction === 'recalculate_bbox') {
+         // Calculate the bbox based on the final positions of selected items
+         this.updatePersistentStateFromSelection(); // This gets the current bbox/center/angle=0
+    } else if (stateToPersistAfterTransform && typeof stateToPersistAfterTransform === 'object') {
+         // *** Apply the calculated state from rotate/scale ***
+         this.initialBBox = stateToPersistAfterTransform.bbox;
+         this.scaleRotateCenter = stateToPersistAfterTransform.center;
+         this.selectionRotationAngle = stateToPersistAfterTransform.angle;
+    } else if (!(wasRotating || wasScaling || wasDraggingItems || wasDraggingNodes || wasDrawingFreehand || (releasedButton === 2 && wasSelecting && dragOccurred))) {
+        // If NO major action occurred that sets state (e.g. simple click, failed drag, context menu),
+        // ensure persistent state matches the current selection.
+        // This prevents stale bbox/angle after simple clicks or selection changes.
+        this.updatePersistentStateFromSelection();
     }
+
+
+    // --- Final UI Updates ---
+    this.updateCursorBasedOnContext(); // Update cursor based on final state (no longer dragging)
+    this.redrawCanvas(); // Redraw elements in their final positions
+    this.updateNodeHandles(); // Update node handles based on selection state
+
+    // --- Call updateTransformHandles unconditionally ---
+    // The logic to skip the visual update is now INSIDE updateTransformHandles
+    this.updateTransformHandles();
+
+} // End handleMouseUp
 
 
     finalizeCurrentDrawing() {
@@ -1441,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const currentActiveTextBox = this.activeTextBox; const focusIsOnEditableTextBox = currentActiveTextBox && currentActiveTextBox.isEditing;
 
       if (event.key === 'Escape') { event.preventDefault(); if (this.isRotating || this.isScaling) { this.applyTransform(this.dragStartStates, true); const startState = this.dragStartStates[0]; if (startState) { this.selectionRotationAngle = startState.startGroupRotation ?? 0; this.initialBBox = startState.startBBox ? { ...startState.startBBox } : null; this.scaleRotateCenter = startState.startCenter ? { ...startState.startCenter } : {x:0,y:0}; } else { this.resetPersistentTransformState(); } this.isRotating = false; this.isScaling = false; this.dragStartStates = []; this.currentRotationAngle = 0; this.currentScaleFactor = 1; this.currentScaleFactorX = 1; this.currentScaleFactorY = 1; this.redrawCanvas(); this.updateNodeHandles(); this.updateTransformHandles(); this.updateCursorBasedOnContext(); } else if (this.isDrawing || this.isAltDrawing) { this.finalizeCurrentDrawing(); } else if (this.isSelecting) { this.isSelecting = false; this.potentialRightClick = false; this.selectionRectElem.style.display = 'none'; } else if (focusIsOnEditableTextBox) { this.deactivateTextBox(currentActiveTextBox); this.body.focus({ preventScroll: true }); } else if (this.selectionLevel === 'element' || this.selectedTextBoxes.size > 0 || this.activeComponentData.size > 0 || this.initialBBox){ this.deselectAll(); } return; }
-      if (focusIsOnEditableTextBox) { if (event.key === 'Enter' && !this.isShiftDown) { event.preventDefault(); this.deactivateTextBox(currentActiveTextBox); this.body.focus({ preventScroll: true }); } return; } // Let TextBox handle other keys
+      if (focusIsOnEditableTextBox) { return; } // Let TextBox handle other keys
       if (this.isCtrlDown && event.key.toLowerCase() === 'a') { event.preventDefault(); this.selectAllItems(); return; }
       if (this.isCtrlDown && event.key.toLowerCase() === 'z') { event.preventDefault(); this.undo(); return; }
       if (this.isCtrlDown && event.key.toLowerCase() === 'y') { event.preventDefault(); this.redo(); return; }

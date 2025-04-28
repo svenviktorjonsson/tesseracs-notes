@@ -57,10 +57,10 @@ body {
 }
 
 
-/* Text Box Styling */
+/* Text Box Styling - Display Mode */
 .textBox {
   position: absolute;
-  white-space: pre;
+  white-space: nowrap;     /* Correct for KaTeX rendering */
   outline: none;
   border: none;
   padding: 0;
@@ -68,13 +68,12 @@ body {
   user-select: none;
   -webkit-user-select: none;
   background-color: transparent;
-  /* --- FIX for vertical cropping: Collapse container line height --- */
-  line-height: 0;
-  /* ------------------------------------------------------------- */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
+  line-height: normal;     /* Use normal line height */
+  display: inline-block;   /* Use inline-block for shrink-wrap & vertical-align */
+  /* REMOVED justify-content */
+  /* REMOVED align-items */
+  text-align: center;      /* Center inline content horizontally */
+  vertical-align: middle;  /* Align the block vertically */
 }
 
 /* --- REMOVED pointer-events: none to FIX HIT AREA --- */
