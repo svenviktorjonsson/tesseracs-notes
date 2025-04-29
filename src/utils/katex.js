@@ -127,181 +127,223 @@ function formatTickLabelString(labelString, options = {}) {
     return formattedString;
 }
 
-/**
- * Converts a raw string containing text and custom math notation into
- * a KaTeX-compatible math string wrapped in $$.
- *
- * Rules:
- * - \SingleLetter (e.g., \a, \x, \P) becomes \mathrm{SingleLetter}.
- * - Multi-character Word (e.g., Text, word) becomes \mathrm{Word}.
- * - Single letters (e.g., a, x, P) remain as variables.
- * - LaTeX commands (e.g., \alpha, \int) are preserved.
- * - Matrix syntax (&, \\) is preserved.
- * - Newlines (\n, \r\n) become \\.
- * - $ becomes \$.
- * - Spaces between text/mathrm blocks are escaped (\ ).
- *
- * @param {string} originalString The raw input string.
- * @returns {string} The processed string wrapped in $$, ready for KaTeX.
- */
+
 function formatStringToMathDisplay(originalString) {
     console.log('[formatStringToMathDisplay FINAL] Input:', originalString);
+    // Handle null/undefined/empty string input
     if (typeof originalString !== 'string' || originalString.trim() === '') {
+        // Return an empty align environment or just empty string?
+        // Let's return empty string for simplicity, KaTeX might handle empty align gracefully anyway.
         return '';
     }
 
+    // Trim the input string *before* tokenization to handle leading/trailing spaces easily.
+    const trimmedOriginalString = originalString.trim();
+    // If trimming resulted in an empty string, return empty.
+    if (trimmedOriginalString === '') {
+        return '';
+    }
+
+
     // Regex prioritizing specific tokens, including \letter, before catch-all
     // Group 1: \a_b style backslash subscript
-    // Group 2: \\ (double backslash for matrix/newline)
+    // Group 2: \\ (double backslash for matrix/newline - keep this!)
     // Group 3: \alpha style multi-letter commands
     // Group 4: \a style single backslash letter (CRITICAL: Matched before single chars)
     // Group 5: word style words
     // Group 6: numbers
     // Group 7: $
-    // Group 8: &
+    // Group 8: & (important for align environment)
     // Group 9: space
     // Group 10: \n or \r\n newline
     // Group 11: Any other single character (catch-all)
-    const tokenRegex = /(\\[a-zA-ZåäöÅÄÖ]_\[a-zA-ZåäöÅÄÖ])|(\\\\) |(\\[a-zA-ZåäöÅÄÖ]{2,})|(\\[a-zA-ZåäöÅÄÖ])|([a-zA-ZåäöÅÄÖ][a-zA-Z0-9åäöÅÄÖ]*)|([0-9]+(?:\.[0-9]+)?)|(\$)|(&)|( )|(\r?\n)|([\s\S])/g;
+    // Added ÅÄÖ characters to relevant groups
+    const tokenRegex = /(\\[a-zA-ZåäöÅÄÖ]_\{[a-zA-ZåäöÅÄÖ0-9 ]+\})|(\\\\) |(\\[a-zA-ZåäöÅÄÖ]{2,})|(\\[a-zA-ZåäöÅÄÖ])|([a-zA-ZåäöÅÄÖ][a-zA-Z0-9åäöÅÄÖ]*)|([0-9]+(?:\.[0-9]+)?)|(\$)|(&)|( )|(\r?\n)|([\s\S])/g;
+
 
     let match;
     const tokens = [];
     let currentCommandForArgCheck = null;
 
-    tokenRegex.lastIndex = 0;
+    tokenRegex.lastIndex = 0; // Reset regex state
 
     // --- Tokenization Phase ---
-    while ((match = tokenRegex.exec(originalString)) !== null) {
-        const backslashSubscript = match[1], doubleBackslash = match[2], command = match[3], backslashLetter = match[4], word = match[5], number = match[6], dollar = match[7], ampersand = match[8], space = match[9], newline = match[10], other = match[11];
+    while ((match = tokenRegex.exec(trimmedOriginalString)) !== null) { // Use trimmed string
+        // Extract matched groups
+        const backslashSubscript = match[1],
+              doubleBackslash = match[2],
+              command = match[3],
+              backslashLetter = match[4],
+              word = match[5],
+              number = match[6],
+              dollar = match[7],
+              ampersand = match[8],
+              space = match[9],
+              newline = match[10],
+              other = match[11];
         let tokenInfo = {};
 
-        // Check groups in order of priority
-        if (backslashSubscript) { tokenInfo = { type: 'backslashSubscript', value: `\\mathrm{${match[1].split('_').map(part => part.slice(1))[0]}}_\\mathrm{${match[1].split('_').map(part => part.slice(1))[1]}}` }; }
-        else if (doubleBackslash) { tokenInfo = { type: 'doubleBackslash', value: '\\\\' }; }
-        else if (command) { tokenInfo = { type: 'command', value: command }; currentCommandForArgCheck = tokenInfo; }
-        else if (backslashLetter) { tokenInfo = { type: 'backslashLetter', value: backslashLetter.slice(1) }; } // \a, \P etc.
-        else if (word) { tokenInfo = { type: 'word', value: word }; const lt = tokens[tokens.length - 1]; const slt = tokens[tokens.length - 2]; let iA = false; if (lt?.type === 'other' && lt.value === '{' && slt?.type === 'command') { iA = true; } tokenInfo.isArgument = iA; if (!iA) currentCommandForArgCheck = null; }
+        // Determine token type based on which group matched
+        if (backslashSubscript) {
+            // Extract parts carefully, assuming format \Letter_{Argument}
+            const parts = backslashSubscript.match(/^\\([a-zA-ZåäöÅÄÖ])_\{(.*)\}$/);
+            if (parts && parts[1] && parts[2]) {
+                 tokenInfo = { type: 'backslashSubscript', value: `\\mathrm{${parts[1]}}_\\mathrm{${parts[2]}}` };
+            } else {
+                 // Fallback or error handling if format is unexpected
+                 console.warn("Unexpected backslash subscript format:", backslashSubscript);
+                 tokenInfo = { type: 'other', value: backslashSubscript }; // Treat as literal if parse fails
+            }
+        } else if (doubleBackslash) { tokenInfo = { type: 'doubleBackslash', value: '\\\\' }; } // Literal \\
+        else if (command) { tokenInfo = { type: 'command', value: command }; currentCommandForArgCheck = tokenInfo; } // e.g., \alpha
+        else if (backslashLetter) { tokenInfo = { type: 'backslashLetter', value: backslashLetter.slice(1) }; } // e.g., \a -> a
+        else if (word) { // e.g., Text, word1
+            tokenInfo = { type: 'word', value: word };
+            // Basic check if it follows a command expecting an argument wrapped in {}
+            const lt = tokens[tokens.length - 1]; // last token
+            const slt = tokens[tokens.length - 2]; // second last token
+            tokenInfo.isArgument = (lt?.type === 'other' && lt.value === '{' && slt?.type === 'command');
+            if (!tokenInfo.isArgument) currentCommandForArgCheck = null; // Reset if not part of an argument
+        }
         else if (number) { tokenInfo = { type: 'number', value: number }; currentCommandForArgCheck = null; }
-        else if (dollar) { tokenInfo = { type: 'dollar', value: '\\$' }; currentCommandForArgCheck = null; }
-        else if (ampersand) { tokenInfo = { type: 'ampersand', value: '&' }; currentCommandForArgCheck = null; }
-        else if (space) { tokenInfo = { type: 'space', value: ' ' }; }
-        else if (newline) { tokenInfo = { type: 'newline', value: '\\\\' }; currentCommandForArgCheck = null; }
-        else if (other) { tokenInfo = { type: 'other', value: other }; if (!(other === '{' && currentCommandForArgCheck)) { currentCommandForArgCheck = null; } }
+        else if (dollar) { tokenInfo = { type: 'dollar', value: '\\$' }; currentCommandForArgCheck = null; } // Escape dollar sign
+        else if (ampersand) { tokenInfo = { type: 'ampersand', value: '&' }; currentCommandForArgCheck = null; } // Keep & for align
+        else if (space) { tokenInfo = { type: 'space', value: ' ' }; } // Keep space
+        else if (newline) { tokenInfo = { type: 'newline', value: '\\\\' }; currentCommandForArgCheck = null; } // *** Convert \n to \\ ***
+        else if (other) { // Any other single character like +, -, {, }, ^, _ etc.
+            tokenInfo = { type: 'other', value: other };
+            // Reset argument check unless it's the opening brace right after a command
+            if (!(other === '{' && currentCommandForArgCheck)) {
+                currentCommandForArgCheck = null;
+            }
+        }
 
-        // Ensure a token was actually created before pushing
+        // Push the token if one was successfully identified
         if (tokenInfo.type) {
-             tokens.push(tokenInfo);
-        } else if (match[0]){ // Log if something matched but didn't create a token (shouldn't happen)
-             console.warn("Tokenization anomaly: Matched content did not produce token:", match[0]);
+            tokens.push(tokenInfo);
+        } else if (match[0]) {
+            console.warn("Tokenization anomaly: Matched content did not produce token:", match[0]);
         }
     }
-     console.log('[formatStringToMathDisplay FINAL] Tokens:', JSON.stringify(tokens.map(t => ({t:t.type, v:t.value}))));
-
+    console.log('[formatStringToMathDisplay FINAL] Tokens:', JSON.stringify(tokens.map(t => ({ t: t.type, v: t.value }))));
 
     // --- Processing Phase ---
     let processedText = '';
 
-    // Helper: Checks if token renders as text (\mathrm).
-    // Now correctly includes backslashLetter and non-arg multi-char words.
+    // Helper function to determine if a token should be wrapped in \mathrm
     const willRenderAsMathrm = (token) => {
         if (!token) return false;
+        // Single letters preceded by \ are treated as text blocks
         if (token.type === 'backslashLetter' || token.type === 'backslashSubscript') {
-             return true;
-         }
+            return true;
+        }
+        // Multi-character words that are NOT arguments to commands are treated as text blocks
         if (token.type === 'word' && !token.isArgument && token.value.length > 1) {
-             return true; // Multi-char non-arg words are always \mathrm now
+            return true;
         }
         return false;
     };
-
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
         console.log(`[Processing Loop FINAL] Index: ${i}, Type: ${token.type}, Value: "${token.value}"`);
 
         switch (token.type) {
-            case 'command': // \alpha etc.
+            // These types are output directly
+            case 'command':
             case 'number':
-            case 'ampersand': // &
-            case 'doubleBackslash': // \\
-            case 'newline': // \\ (from \n)
-            case 'backslashSubscript': // Already \mathrm{a}_\mathrm{b}
-            case 'dollar': // Already \$
-                 console.log(`  -> Outputting literal value: "${token.value}"`);
-                 processedText += token.value; break;
+            case 'ampersand': // Keep & for align
+            case 'doubleBackslash': // Keep \\
+            case 'newline': // Keep \\ (converted from \n)
+            case 'backslashSubscript': // Already formatted
+            case 'dollar': // Already escaped \$
+                console.log(`  -> Outputting literal value: "${token.value}"`);
+                processedText += token.value;
+                break;
 
-             case 'other': // _, ^, {, }, +, -, etc.
-                 console.log(`  -> Outputting literal 'other': "${token.value}"`);
-                 const esc = ['#', '%']; // Only escape these
-                 if(esc.includes(token.value)){
-                     processedText+='\\'+token.value;
-                 } else {
-                     processedText+=token.value;
-                 }
-                 break;
+            case 'other': // Single characters like +, -, {, }, ^, _ etc.
+                console.log(`  -> Outputting literal 'other': "${token.value}"`);
+                // Escape specific characters if needed for LaTeX
+                const charsToEscape = ['#', '%']; // Add others like & if not handled separately
+                if (charsToEscape.includes(token.value)) {
+                    processedText += '\\' + token.value;
+                } else {
+                    processedText += token.value;
+                }
+                break;
 
-            case 'backslashLetter': { // \a, \P etc.
+            case 'backslashLetter': // \a, \P treated as text
                 console.log("  -> Hit 'backslashLetter' case");
-                // *** Rule: ALWAYS output \mathrm{...} ***
                 processedText += `\\mathrm{${token.value}}`;
                 console.log(`    -> Appended \\mathrm{${token.value}}`);
                 break;
-            }
 
-            case 'word': { // a, P, Text, word etc.
+            case 'word': // a, P, Text, word1 treated based on context/length
                 console.log("  -> Hit 'word' case");
-                if (token.isArgument) {
+                if (token.isArgument) { // Inside {} after a command
                     console.log("    -> Is argument, outputting literally");
                     processedText += token.value;
-                } else if (token.value.length === 1) {
+                } else if (token.value.length === 1) { // Single letter, treat as variable
                     console.log("    -> Is single letter, outputting literally (variable)");
                     processedText += token.value;
-                } else {
+                } else { // Multi-character word, not argument, treat as text
                     console.log("    -> Is multi-char non-arg, outputting \\mathrm{}");
-                    // *** Rule: Multi-char non-argument words ALWAYS output \mathrm{...} ***
                     processedText += `\\mathrm{${token.value}}`;
                 }
                 break;
-            }
 
-            case 'space': { // Handle spacing between \mathrm blocks
+            case 'space': // Handle space, potentially escaping if between text blocks
                 console.log("  -> Hit 'space' case");
                 let escapeSpace = false;
-                let prevNIS={token:null, index: -1}, nextNIS={token:null, index: -1};
-                for(let k=i-1;k>=0;k--){if(tokens[k].type!=='space'){prevNIS={token:tokens[k],index:k};break;}}
-                for(let k=i+1;k<tokens.length;k++){if(tokens[k].type!=='space'){nextNIS={token:tokens[k],index:k};break;}}
-                // Use the simplified helper function
+                // Find previous non-space token
+                let prevNIS = { token: null, index: -1 };
+                for (let k = i - 1; k >= 0; k--) { if (tokens[k].type !== 'space') { prevNIS = { token: tokens[k], index: k }; break; } }
+                // Find next non-space token
+                let nextNIS = { token: null, index: -1 };
+                for (let k = i + 1; k < tokens.length; k++) { if (tokens[k].type !== 'space') { nextNIS = { token: tokens[k], index: k }; break; } }
+
                 const prevIsWordLike = willRenderAsMathrm(prevNIS.token);
                 const nextIsWordLike = willRenderAsMathrm(nextNIS.token);
-                 console.log(`    -> Prev is word-like: ${prevIsWordLike}, Next is word-like: ${nextIsWordLike}`);
-                if(prevIsWordLike||nextIsWordLike){
-                    escapeSpace=true;
-                    if(prevIsWordLike&&!nextIsWordLike){
-                        let charBeforePrev='';
-                        let idx=prevNIS.index-1;
-                        while(idx>=0&&tokens[idx].type==='space'){idx--;}
-                        if(idx>=0&&tokens[idx].type==='other'){charBeforePrev=tokens[idx].value;}
-                        console.log(`    -> Char before prev word-like: "${charBeforePrev}"`);
-                        if(charBeforePrev==='^'||charBeforePrev==='_'){
-                            escapeSpace=false;
-                             console.log("    -> Deviation applies, not escaping space.");
-                        }
+                console.log(`    -> Prev is word-like: ${prevIsWordLike}, Next is word-like: ${nextIsWordLike}`);
+
+                // Escape space if it's between two things that render as text blocks (\mathrm)
+                // Or if it's adjacent to just one text block (to ensure spacing)
+                if (prevIsWordLike || nextIsWordLike) {
+                    escapeSpace = true;
+                    // Exception: Don't escape if previous text block was part of a subscript/superscript
+                    if (prevIsWordLike && !nextIsWordLike) {
+                       let charBeforePrev = '';
+                       let idx = prevNIS.index - 1;
+                       while(idx >= 0 && tokens[idx].type === 'space'){ idx--; } // Skip spaces before the previous token
+                       if(idx >= 0 && tokens[idx].type === 'other' && (tokens[idx].value === '^' || tokens[idx].value === '_')){
+                           charBeforePrev = tokens[idx].value;
+                       }
+                       console.log(`    -> Char before prev word-like: "${charBeforePrev}"`);
+                       if (charBeforePrev === '^' || charBeforePrev === '_') {
+                           escapeSpace = false; // Don't escape space after sup/sub content
+                           console.log("    -> Deviation applies, not escaping space.");
+                       }
                     }
                 }
-                processedText += escapeSpace ? '\\ ' : ' ';
-                console.log(`    -> Appended ${escapeSpace ? "'\\ '" : "' '"} `);
+                processedText += escapeSpace ? '\\ ' : ' '; // Append escaped or regular space
+                console.log(`    -> Appended ${escapeSpace ? "'\\ '" : "' '"}`);
                 break;
-            }
-             default:
+
+            default: // Should not happen if regex is comprehensive
                 console.warn("[formatStringToMathDisplay FINAL] Unknown token type:", token.type, token.value);
-                processedText += token.value; break;
+                processedText += token.value; // Append raw value as fallback
+                break;
         }
     }
 
-    processedText = processedText.trim();
-    console.log('[formatStringToMathDisplay FINAL] Final Output Text:', processedText);
-    if (processedText === '') { return ''; }
-    return `$$${processedText}$$`; // Wrap in $$
+    // No need to trim again as we trimmed the input and spaces are handled in the loop.
+    console.log('[formatStringToMathDisplay FINAL] Final Processed Text:', processedText);
+
+    // Check if the result is effectively empty after processing
+    if (processedText.trim() === '') { return ''; }
+
+    // *** UPDATED: Wrap in align* environment instead of $$ ***
+    return `$$${processedText}$$`;
 }
 
 

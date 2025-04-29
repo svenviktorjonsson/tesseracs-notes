@@ -93,7 +93,7 @@ export class TextBox {
 
      _measureRenderedSize() {
         if (!this.element) return { width: 0, height: 0 };
-
+    
         // Store current inline styles to restore them later
         const prevWidth = this.element.style.width;
         const prevHeight = this.element.style.height;
@@ -103,43 +103,45 @@ export class TextBox {
         const prevTextAlign = this.element.style.textAlign;
         const prevJustifyContent = this.element.style.justifyContent;
         const prevAlignItems = this.element.style.alignItems;
-
+    
         // Temporarily reset styles that affect measurement
         this.element.style.fontSize = this.fontSize; // Ensure correct font size for measurement
         this.element.style.color = this.color;       // Ensure correct color (though less likely to affect size)
         this.element.style.width = 'auto';
         this.element.style.height = 'auto';
-        this.element.style.transform = ''; // Remove transform for accurate scrollWidth/Height
-
+        this.element.style.transform = ''; // Remove transform for accurate measurement
+    
         let measuredWidth = 0;
         let measuredHeight = 0;
         const minHeightFromFontSize = Math.max(1, parseFloat(this.fontSize) || 16);
-
+    
         if (this.isEditing) {
             // Measurement during editing (plain text)
             this.element.style.display = 'block'; // Use block for measurement
             this.element.style.whiteSpace = 'pre'; // Use pre for measurement
             this.element.style.textAlign = 'left'; // Use left align for measurement
-            // Temporarily set content for measurement if needed (usually done in enterEditMode)
-            // this.element.textContent = this.text || '\u00A0';
-
+    
             measuredWidth = this.element.scrollWidth;
             measuredHeight = this.element.scrollHeight;
-
+    
             // Add minimum width for empty editable box
             if (!this.text || this.text.trim() === '') {
                 measuredWidth = Math.max(measuredWidth, 10);
             }
+            // Ensure minimum height in edit mode too
+             measuredHeight = Math.max(measuredHeight, minHeightFromFontSize);
+    
         } else {
             // Measurement during display (KaTeX)
-            this.element.style.display = 'inline-block'; // Use inline-block for measurement
-            this.element.style.whiteSpace = 'nowrap'; // Use nowrap for measurement
-            this.element.style.textAlign = 'center'; // Use center for measurement
-
+            // Apply temporary styles suitable for KaTeX measurement
+            this.element.style.display = 'inline-block';
+            this.element.style.whiteSpace = 'normal'; // Allow internal KaTeX wrapping
+            this.element.style.textAlign = 'center'; // Or 'left', depending on desired alignment within the box
+    
             const { formatStringToMathDisplay, renderStringToElement } = this.utils;
             let katexInputString;
             let renderSuccess = false;
-
+    
             try {
                 katexInputString = formatStringToMathDisplay(this.text || '\\phantom{}'); // Use phantom for empty
             } catch (error) {
@@ -147,7 +149,7 @@ export class TextBox {
                 this.element.textContent = `Format Err!`;
                 katexInputString = undefined;
             }
-
+    
             if (katexInputString !== undefined) {
                 this.element.innerHTML = ''; // Clear before rendering
                 try {
@@ -159,33 +161,30 @@ export class TextBox {
                     renderSuccess = false;
                 }
             }
-
-            // Measure width using scrollWidth
-            measuredWidth = this.element.scrollWidth;
-
-            // --- Try to measure a tighter height using .base element ---
-            let tempHeight = 0;
-            if (renderSuccess) {
-                const baseElement = this.element.querySelector('.base'); // Target .base span
-                if (baseElement instanceof HTMLElement) {
-                    tempHeight = baseElement.offsetHeight;
-                    // Optional adjustment: tempHeight += 2;
-                } else { // Fallback if .base not found
-                    const katexHtmlElement = this.element.querySelector('.katex-html');
-                    if (katexHtmlElement instanceof HTMLElement) {
-                        tempHeight = katexHtmlElement.offsetHeight;
-                    }
-                }
+    
+            // --- Measure the core KaTeX content ---
+            const katexHtmlElement = this.element.querySelector('.katex-html');
+    
+            if (renderSuccess && katexHtmlElement instanceof HTMLElement) {
+                // Use getBoundingClientRect on the inner katex-html element.
+                // This usually excludes outer margins (like from .katex-display)
+                // but includes padding/border of the measured element itself.
+                const rect = katexHtmlElement.getBoundingClientRect();
+                measuredWidth = rect.width;
+                measuredHeight = rect.height;
+                 // console.log(`[${this.id}] Measured .katex-html rect:`, rect.width, rect.height); // Optional debug log
+            } else {
+                // Fallback: If rendering failed or .katex-html not found, measure the container.
+                console.warn(`[${this.id}] Fallback measurement: Using scrollWidth/scrollHeight.`);
+                measuredWidth = this.element.scrollWidth;
+                measuredHeight = this.element.scrollHeight;
             }
-            // If specific measurement failed, fallback to scrollHeight
-            if (tempHeight <= 0) {
-                tempHeight = this.element.scrollHeight;
-            }
-            measuredHeight = tempHeight;
-            // Ensure minimum width if rendering failed or content is empty
-            if (measuredWidth <= 0) measuredWidth = 10;
+    
+            // Ensure minimum dimensions if measurement somehow resulted in zero or less
+            if (measuredWidth <= 0) measuredWidth = 10; // Ensure minimum width
+            if (measuredHeight <= 0) measuredHeight = minHeightFromFontSize; // Ensure minimum height based on font
         }
-
+    
         // Restore previous inline styles
         this.element.style.width = prevWidth;
         this.element.style.height = prevHeight;
@@ -195,11 +194,11 @@ export class TextBox {
         this.element.style.textAlign = prevTextAlign;
         this.element.style.justifyContent = prevJustifyContent;
         this.element.style.alignItems = prevAlignItems;
-
-        // Update internal dimensions, ensuring minimums
+    
+        // Update internal dimensions, ensuring minimums based on font size and measurement
         this.width = Math.max(1, measuredWidth);
         this.height = Math.max(1, minHeightFromFontSize, measuredHeight);
-
+    
         return { width: this.width, height: this.height };
     }
 
