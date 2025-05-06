@@ -1448,19 +1448,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const wasScaling = this.isScaling;
         const wasSelecting = this.isSelecting;
         const wasPotentialRightClick = this.potentialRightClick;
-        const startStatesForHistory = [...this.dragStartStates];
+        const startStatesForHistory = [...this.dragStartStates]; // Shallow copy for history
         const capturedRotationAngle = this.currentRotationAngle;
         const capturedScaleFactorX = this.currentScaleFactorX;
         const capturedScaleFactorY = this.currentScaleFactorY;
         let needsPersistentStateRecalc = false;
         let transformEndedSuccessfully = false;
-        let dragEndedSuccessfully = false;
-        const previousPersistentState = {
+        let dragEndedSuccessfully = false; // Specifically for drag operations
+        const previousPersistentState = { // State before this mouseUp's logic runs (i.e., end of last mousemove)
             angle: this.selectionRotationAngle,
             box: this.initialBBox ? { ...this.initialBBox } : null,
             center: this.scaleRotateCenter ? { ...this.scaleRotateCenter } : null
         };
-        let finalPersistentState = null; // Will hold the state to save for history/redo
+        let finalPersistentState = null; // For rotate/scale history
+
         if (releasedButton === 2 && wasSelecting) {
             event.preventDefault();
             this.selectionRectElem.style.display = 'none';
@@ -1486,50 +1487,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 transformEndedSuccessfully = true;
                 let historyEntry = null;
                 let transformApplied = false;
-                const startState = startStatesForHistory[0];
-                if (!startState || !startState.startCenter) {
-                    console.error("Cannot end transform: Missing start state info.");
-                    transformEndedSuccessfully = false; // Crucial: prevent setting lastActionWasTransform if state is bad
+                const startState = startStatesForHistory[0]; // Base for group transform info
+
+                if (!startState || !startState.startCenter || !startState.startBBox) {
+                    console.error("Cannot end transform: Missing start state info (center/bbox).");
+                    transformEndedSuccessfully = false;
                 } else {
                     const startGroupRotation = startState.startGroupRotation ?? 0;
                     const rotationCenter = startState.startCenter;
-                    // Apply final state to elements and calculate persistent visual state
+                    const startBBoxForTransform = startState.startBBox;
+
                     if (wasScaling) {
-                        // Finalize element scales (text needs this)
                         startStatesForHistory.forEach(itemState => {
                             if (itemState.type === 'text') {
                                 const textBox = this.textBoxRegistry.get(itemState.id);
-                                textBox?.finalizeScale(); // Ensures internal font size etc. is set based on actual scale
+                                textBox?.finalizeScale();
                             }
                         });
-                        // Calculate the VISUAL persistent state based on the FINAL MOUSE POSITION
                         const finalMouseRel = { x: currentPoint.x - rotationCenter.x, y: currentPoint.y - rotationCenter.y };
                         const cosA = Math.cos(-startGroupRotation);
                         const sinA = Math.sin(-startGroupRotation);
                         const finalMouseRelLocal = { x: finalMouseRel.x * cosA - finalMouseRel.y * sinA, y: finalMouseRel.x * sinA + finalMouseRel.y * cosA };
-                        // Use absolute values from mouse position for the visual box dimensions
                         const persistentVisualWidth = Math.max(1, Math.abs(finalMouseRelLocal.x) * 2);
                         const persistentVisualHeight = Math.max(1, Math.abs(finalMouseRelLocal.y) * 2);
-                        // --- Update the actual persistent state variables ---
+
                         this.scaleRotateCenter = { ...rotationCenter };
-                        this.selectionRotationAngle = startGroupRotation; // Angle doesn't change during scale
+                        this.selectionRotationAngle = startGroupRotation;
                         this.initialBBox = {
                             width: persistentVisualWidth, height: persistentVisualHeight,
                             centerX: rotationCenter.x, centerY: rotationCenter.y,
                             minX: rotationCenter.x - persistentVisualWidth / 2, minY: rotationCenter.y - persistentVisualHeight / 2,
                             maxX: rotationCenter.x + persistentVisualWidth / 2, maxY: rotationCenter.y + persistentVisualHeight / 2
                         };
-                        // -----------------------------------------------------
-                        // Store a *copy* of this final state for history/redo
                         finalPersistentState = { angle: this.selectionRotationAngle, box: { ...this.initialBBox }, center: { ...this.scaleRotateCenter } };
-                        // Prepare history entry (element states reflect actual applied scale)
                         historyEntry = {
                             type: 'transform_items', transformType: 'scale', items: [],
-                            startAngle: startGroupRotation, startCenter: startState.startCenter, startBBox: startState.startBBox,
-                            endScaleX: capturedScaleFactorX, endScaleY: capturedScaleFactorY, // Actual scale factors
-                            prevPersistent: previousPersistentState, finalPersistent: finalPersistentState // Store visual states
+                            startAngle: startGroupRotation, startCenter: rotationCenter, startBBox: startBBoxForTransform,
+                            endScaleX: capturedScaleFactorX, endScaleY: capturedScaleFactorY,
+                            prevPersistent: previousPersistentState, finalPersistent: finalPersistentState
                         };
-                        startStatesForHistory.forEach(itemState => {
+                        // ... (populate historyEntry.items - unchanged from your version)
+                         startStatesForHistory.forEach(itemState => {
                             let endState = null; let moved = false;
                             const itemStartRotation = itemState.startRotation ?? 0;
                             const itemStartFontSize = itemState.startFontSize ?? 0;
@@ -1541,7 +1539,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             } else if (itemState.type === 'text') {
                                 const box = this.textBoxRegistry.get(itemState.id);
                                 if (box) {
-                                    const finalBoxData = box.getDataForHistory(); // Get state reflecting actual scale
+                                    const finalBoxData = box.getDataForHistory();
                                     endState = { endX: finalBoxData.x, endY: finalBoxData.y, endWidth: finalBoxData.width, endHeight: finalBoxData.height, endRotation: finalBoxData.rotation, endFontSize: parseFloat(finalBoxData.fontSize) };
                                     moved = Math.abs(endState.endX - itemState.startX) > 0.1 || Math.abs(endState.endY - itemState.startY) > 0.1 || Math.abs(endState.endRotation - itemStartRotation) > 0.001 || Math.abs(endState.endFontSize - itemStartFontSize) > 0.1 || Math.abs(endState.endWidth - itemStartWidth) > 0.1 || Math.abs(endState.endHeight - itemStartHeight) > 0.1;
                                 }
@@ -1557,10 +1555,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     } else { // wasRotating
                         const finalAngle = startGroupRotation + capturedRotationAngle;
-                        // Rotation doesn't change dimensions relative to the start state
-                        const finalWidth = startState.startBBox.width;
-                        const finalHeight = startState.startBBox.height;
-                        // --- Update the actual persistent state variables ---
+                        const finalWidth = startBBoxForTransform.width; // Use dimensions from start of transform
+                        const finalHeight = startBBoxForTransform.height;
+
                         this.scaleRotateCenter = { ...rotationCenter };
                         this.selectionRotationAngle = finalAngle;
                         this.initialBBox = {
@@ -1569,16 +1566,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             minX: rotationCenter.x - finalWidth / 2, minY: rotationCenter.y - finalHeight / 2,
                             maxX: rotationCenter.x + finalWidth / 2, maxY: rotationCenter.y + finalHeight / 2
                         };
-                         // -----------------------------------------------------
-                        // Store a *copy* of this final state for history/redo
                         finalPersistentState = { angle: this.selectionRotationAngle, box: { ...this.initialBBox }, center: { ...this.scaleRotateCenter } };
-                        // Prepare history entry
                         historyEntry = {
                             type: 'transform_items', transformType: 'rotate', items: [],
-                            startAngle: startGroupRotation, startCenter: startState.startCenter, startBBox: startState.startBBox,
+                            startAngle: startGroupRotation, startCenter: rotationCenter, startBBox: startBBoxForTransform,
                             endAngle: finalAngle,
-                            prevPersistent: previousPersistentState, finalPersistent: finalPersistentState // Store visual states
+                            prevPersistent: previousPersistentState, finalPersistent: finalPersistentState
                         };
+                        // ... (populate historyEntry.items - unchanged from your version)
                         startStatesForHistory.forEach(itemState => {
                             let endX, endY, endRotation; let moved = false;
                             const itemStartRotation = itemState.startRotation ?? 0;
@@ -1599,106 +1594,126 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
                     }
-                    // Add history only if something actually changed
-                    if (transformApplied && historyEntry) {
+                    if (transformApplied && historyEntry && historyEntry.items.length > 0) {
                         this.addHistory(historyEntry);
                     }
-                    // Set flag only if transform was valid and state was derived
-                    if (finalPersistentState) {
-                         this.lastActionWasTransform = true;
-                    } else {
-                         // Should have been caught by startState check, but as safety:
-                         console.error("Transform ended but final persistent state is missing.");
-                         needsPersistentStateRecalc = true;
-                         transformEndedSuccessfully = false;
-                    }
-                } // End of valid startState check
+                }
             } else if ((wasDraggingNodes || wasDraggingItems) && dragOccurred) {
-                dragEndedSuccessfully = true;
                 const dx = screenX - this.dragStartMousePos.x;
                 const dy = screenY - this.dragStartMousePos.y;
                 let historyEntry = null;
-                if (wasDraggingNodes) {
-                    const moves = [];
-                    startStatesForHistory.forEach(itemState => {
-                        if (itemState.type === 'node') {
-                            const node = this.graph.getNode(itemState.id);
-                            if (node && (Math.abs(node.x - itemState.startX) > 0.1 || Math.abs(node.y - itemState.startY) > 0.1)) {
-                                moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: node.x, endY: node.y });
-                            }
-                        }
-                    });
-                    if (moves.length > 0) { historyEntry = { type: 'move_nodes', moves: moves }; }
-                } else { // wasDraggingItems
-                    this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto';
-                    const moves = [];
-                    startStatesForHistory.forEach(itemState => {
-                        if (itemState.type === 'text') {
-                            const box = this.textBoxRegistry.get(itemState.id);
-                            if (box && (Math.abs(box.x - itemState.startX) > 0.1 || Math.abs(box.y - itemState.startY) > 0.1)) {
-                                const d = box.getDataForHistory();
-                                moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, startRotation: itemState.startRotation, startFontSize: itemState.startFontSize, startWidth: itemState.startWidth, startHeight: itemState.startHeight, endX: d.x, endY: d.y, endRotation: d.rotation, endFontSize: parseFloat(d.fontSize), endWidth: d.width, endHeight: d.height });
-                            }
-                        }
-                    });
-                    if (moves.length > 0) { historyEntry = { type: 'move_text', moves: moves }; }
-                }
-                if (historyEntry) { this.addHistory(historyEntry); }
-                // Update persistent state for drag
-                const currentAngle = this.selectionRotationAngle; // Should be from previousPersistentState.angle
-                const currentWidth = this.initialBBox?.width; // Should be from previousPersistentState.box.width
-                const currentHeight = this.initialBBox?.height; // Should be from previousPersistentState.box.height
-                const originalDragCenter = previousPersistentState.center || startStatesForHistory.find(s => s.startCenter)?.startCenter || { x: 0, y: 0 };
-                if (currentWidth !== undefined && currentHeight !== undefined && originalDragCenter) {
-                    const newCenter = { x: originalDragCenter.x + dx, y: originalDragCenter.y + dy };
-                    this.scaleRotateCenter = newCenter;
-                    this.selectionRotationAngle = currentAngle; // Angle doesn't change during drag
-                    this.initialBBox = {
-                        width: currentWidth, height: currentHeight,
-                        centerX: newCenter.x, centerY: newCenter.y,
-                        minX: newCenter.x - currentWidth / 2, minY: newCenter.y - currentHeight / 2,
-                        maxX: newCenter.x + currentWidth / 2, maxY: newCenter.y + currentHeight / 2,
+
+                // Get the state of the selection *before* the drag started.
+                // This information (startCenter, startBBox, startGroupRotation) is crucial.
+                // It should have been stored in dragStartStates by prepareNodeDrag.
+                const dragStartInfo = startStatesForHistory.find(s => s.startCenter && s.startBBox && s.startGroupRotation !== undefined);
+
+                if (dragStartInfo) {
+                    const startCenter = dragStartInfo.startCenter;
+                    const startBBox = dragStartInfo.startBBox;
+                    const startAngle = dragStartInfo.startGroupRotation;
+
+                    // Calculate final persistent state based on the drag's start state + total delta
+                    this.scaleRotateCenter = { x: startCenter.x + dx, y: startCenter.y + dy };
+                    this.selectionRotationAngle = startAngle; // Angle is preserved during drag
+                    this.initialBBox = {                     // Dimensions are preserved during drag
+                        width: startBBox.width, height: startBBox.height,
+                        centerX: this.scaleRotateCenter.x, centerY: this.scaleRotateCenter.y,
+                        minX: this.scaleRotateCenter.x - startBBox.width / 2,
+                        minY: this.scaleRotateCenter.y - startBBox.height / 2,
+                        maxX: this.scaleRotateCenter.x + startBBox.width / 2,
+                        maxY: this.scaleRotateCenter.y + startBBox.height / 2,
                     };
+                    dragEndedSuccessfully = true;
                 } else {
-                    needsPersistentStateRecalc = true; // Recalc if state was invalid
-                    dragEndedSuccessfully = false;
+                    // Fallback or error: If dragStartInfo is not available.
+                    // This means dragStartStates was not populated correctly, or the specific item
+                    // used for reference (startStatesForHistory[0]) didn't have all info.
+                    console.error("Drag end: Crucial drag start information (startCenter, startBBox, startGroupRotation) missing from dragStartStates. Cannot accurately set final persistent state for drag. Selection box might jump or be incorrect.");
+                    // Attempt to use the state as left by the last handleMouseMove, captured in previousPersistentState.
+                    // This is a less ideal fallback as it relies on handleMouseMove's state being perfectly complete.
+                    if (previousPersistentState.center && previousPersistentState.box && previousPersistentState.angle !== undefined) {
+                        this.scaleRotateCenter = { ...previousPersistentState.center }; // Already includes full drag delta
+                        this.selectionRotationAngle = previousPersistentState.angle;    // Should be pre-drag angle
+                        this.initialBBox = { ...previousPersistentState.box };          // Should be pre-drag dimensions, already updated center
+                         // Ensure centerX/Y of initialBBox matches scaleRotateCenter if copied separately
+                        if (this.initialBBox.centerX !== this.scaleRotateCenter.x || this.initialBBox.centerY !== this.scaleRotateCenter.y) {
+                           this.initialBBox.centerX = this.scaleRotateCenter.x;
+                           this.initialBBox.centerY = this.scaleRotateCenter.y;
+                           const hw = this.initialBBox.width / 2; const hh = this.initialBBox.height / 2;
+                           this.initialBBox.minX = this.scaleRotateCenter.x - hw; this.initialBBox.minY = this.scaleRotateCenter.y - hh;
+                           this.initialBBox.maxX = this.scaleRotateCenter.x + hw; this.initialBBox.maxY = this.scaleRotateCenter.y + hh;
+                        }
+                        dragEndedSuccessfully = true; // Consider it successful under fallback
+                        console.warn("Drag end: Used fallback for persistent state based on end-of-mousemove. Result may vary if dragStartStates was incomplete.");
+                    } else {
+                        console.error("Drag end: Fallback persistent state also invalid. Selection box will likely reset.");
+                        needsPersistentStateRecalc = true; // Force re-evaluation from elements
+                        dragEndedSuccessfully = false;    // Mark state update as failed
+                    }
+                }
+
+                if (dragEndedSuccessfully) { // Add history only if state was successfully determined
+                    if (wasDraggingNodes) {
+                        const moves = [];
+                        startStatesForHistory.forEach(itemState => {
+                            if (itemState.type === 'node') {
+                                const node = this.graph.getNode(itemState.id);
+                                if (node && (Math.abs(node.x - itemState.startX) > 0.1 || Math.abs(node.y - itemState.startY) > 0.1)) {
+                                    moves.push({ id: itemState.id, startX: itemState.startX, startY: itemState.startY, endX: node.x, endY: node.y });
+                                }
+                            }
+                        });
+                        if (moves.length > 0) { historyEntry = { type: 'move_nodes', moves: moves }; }
+                    } else { // wasDraggingItems
+                        this.body.style.userSelect = 'auto'; this.body.style.webkitUserSelect = 'auto';
+                        const moves = [];
+                        startStatesForHistory.forEach(itemState => {
+                            if (itemState.type === 'text') {
+                                const box = this.textBoxRegistry.get(itemState.id);
+                                if (box && (Math.abs(box.x - itemState.startX) > 0.1 || Math.abs(box.y - itemState.startY) > 0.1)) {
+                                    const d = box.getDataForHistory();
+                                    moves.push({ id: itemState.id, type: 'text', startX: itemState.startX, startY: itemState.startY, startRotation: itemState.startRotation, startFontSize: itemState.startFontSize, startWidth: itemState.startWidth, startHeight: itemState.startHeight, endX: d.x, endY: d.y, endRotation: d.rotation, endFontSize: parseFloat(d.fontSize), endWidth: d.width, endHeight: d.height });
+                                }
+                            }
+                        });
+                        if (moves.length > 0) { historyEntry = { type: 'move_text', moves: moves }; }
+                    }
+                    if (historyEntry) { this.addHistory(historyEntry); }
                 }
             } else if (!dragOccurred && !wasDrawingFreehand && !this.isAltDown) {
-                // Handle simple clicks (deselect or potential text activation)
-                const target = event.target;
+                // ... (click handling - unchanged from your version) ...
+                 const target = event.target;
                 const targetTextBoxElement = target.closest('.textBox');
                 const targetTextBox = targetTextBoxElement ? this.textBoxRegistry.get(targetTextBoxElement.dataset.id) : null;
                 const hitNode = (target === this.canvas) ? this.getNodeAtPoint(currentPoint) : null;
                 const hitEdge = (target === this.canvas && !hitNode) ? this.getEdgeAtPoint(currentPoint) : null;
-                // Click on background
                 if (!targetTextBox && !hitNode && !hitEdge && !target.closest('#toolbar') && !target.classList.contains('transform-handle') && !target.classList.contains('node-handle')) {
-                     if (!this.isCtrlDown && !this.isShiftDown && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0 || this.activeTextBox)) {
-                         this.deselectAll(); // This will trigger resetPersistentTransformState internally
-                         needsPersistentStateRecalc = false; // Already handled by deselectAll
-                     }
+                    if (!this.isCtrlDown && !this.isShiftDown && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0 || this.activeTextBox)) {
+                        this.deselectAll();
+                        needsPersistentStateRecalc = false;
+                    }
                 } else if (this.clickedElementInfo && this.clickedElementInfo.type === 'text') {
-                     // Clicked on the same text box again
-                     if (targetTextBox?.id === this.clickedElementInfo.id && (!this.isCtrlDown && !this.isShiftDown)) {
-                         // If other things were selected, deselect them but keep this text box
-                         if (this.selectedTextBoxes.size !== 1 || this.activeComponentData.size > 0) {
-                              this.deselectAllGraphElements();
-                              this.selectedTextBoxes.forEach(box => {
-                                  if (box !== targetTextBox) this.deselectTextBox(box);
-                              });
-                              if (!this.selectedTextBoxes.has(targetTextBox)) this.selectTextBox(targetTextBox);
-                         }
-                         // Consider activating edit mode here or rely on double-click
-                     }
+                    if (targetTextBox?.id === this.clickedElementInfo.id && (!this.isCtrlDown && !this.isShiftDown)) {
+                        if (this.selectedTextBoxes.size !== 1 || this.activeComponentData.size > 0) {
+                            this.deselectAllGraphElements();
+                            this.selectedTextBoxes.forEach(box => {
+                                if (box !== targetTextBox) this.deselectTextBox(box);
+                            });
+                            if (!this.selectedTextBoxes.has(targetTextBox)) this.selectTextBox(targetTextBox);
+                        }
+                    }
                 }
-             }
+            }
             this.mouseDownButton = -1;
-        } // End of releasedButton === 0
+        }
+
         // --- Reset states ---
         this.isRotating = false;
         this.isScaling = false;
         this.isDraggingNodes = false;
         this.isDraggingItems = false;
-        if (releasedButton !== 2) {
+        if (releasedButton !== 2) { // Only reset selection flags if not right mouse up (which handles its own)
             this.isSelecting = false;
             this.potentialRightClick = false;
         }
@@ -1706,7 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
         this.currentScaleFactorX = 1;
         this.currentScaleFactorY = 1;
         this.currentDragTargetAngle = 0;
-        this.dragStartStates = [];
+        this.dragStartStates = []; // Clear drag start states
         this.snapTargetNode = null;
         this.potentialNodeHandleClick = false;
         this.potentialGraphElementClick = false;
@@ -1714,35 +1729,43 @@ document.addEventListener('DOMContentLoaded', () => {
         this.potentialDragTarget = null;
         this.clickedElementInfo = null;
         this.lastRenderedTransformState = null;
-        // --- Final State Updates ---
-        if (!transformEndedSuccessfully) {
-             // Ensure flag is false if transform failed or didn't happen
-            this.lastActionWasTransform = false;
-        }
+
+        // Determine if the last action was a transform that successfully updated persistent state
+        this.lastActionWasTransform = (transformEndedSuccessfully && finalPersistentState != null) || dragEndedSuccessfully;
+
         // Handle Alt key state changes
-        if (this.isAltDrawing && !this.isAltDown) {
+        if (this.isAltDrawing && !this.isAltDown) { // Alt key was released during alt drawing
             this.isAltDrawing = false;
             this.altDrawingSourceNodeId = null;
-            needsPersistentStateRecalc = true;
+            needsPersistentStateRecalc = true; // Selection might have changed or needs re-evaluation
         }
-        if (!this.isAltDown) { this.altPreviewSourceNodeIds.clear(); }
-        // If state needs recalc (e.g., after deselect, failed transform), do it now
+        if (!this.isAltDown) { // Alt key is up, clear any previews
+            this.altPreviewSourceNodeIds.clear();
+        }
+
+        // If state needs recalc (e.g., after deselect, failed transform/drag), do it now
+        // This is a fallback or for operations that inherently change selection structure.
         if (needsPersistentStateRecalc) {
-             // Only recalc if a transform didn't successfully set the state
-             if (!transformEndedSuccessfully && !dragEndedSuccessfully) {
-                this.updatePersistentStateFromSelection();
-             } else if (!this.initialBBox) {
-                 // Safety check if somehow state is invalid after successful op
-                 this.updatePersistentStateFromSelection();
-             }
+            // Only recalc if a transform/drag didn't successfully set the state,
+            // OR if the state is somehow invalid even after a successful op (e.g. initialBBox became null).
+            if (!this.lastActionWasTransform || (!this.initialBBox && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0))) {
+                if (this.lastActionWasTransform && !this.initialBBox && (this.activeComponentData.size > 0 || this.selectedTextBoxes.size > 0)) {
+                    console.warn("Persistent state (initialBBox) is null after a successful transform/drag. Forcing recalc and overriding deferral for safety.");
+                    this.lastActionWasTransform = false; // Override deferral because state is bad
+                }
+                this.updatePersistentStateFromSelection(); // This recalculates an axis-aligned box
+            }
         }
-        // --- UI Updates ---
+
+        // --- Final UI Updates ---
         this.updateCursorBasedOnContext();
         this.redrawCanvas();
         this.updateNodeHandles();
-        // Crucially, call updateTransformHandles AFTER all state is finalized
+        // Crucially, call updateTransformHandles AFTER all state is finalized.
+        // If lastActionWasTransform is true, it will defer its visual update, using the just-set persistent state.
         this.updateTransformHandles();
     }
+
 
     updatePersistentStateFromSelection() {
         const bbox = this.getSelectionBoundingBox();
